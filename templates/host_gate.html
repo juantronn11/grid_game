@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Host Access{% endblock %}
+{% block content %}
+<div class="card center-card">
+    <h2>Host Access</h2>
+    <p>Enter the host access code to create a game.</p>
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="access_code">Access Code</label>
+        <input type="password" name="access_code" id="access_code" placeholder="Enter access code" required class="input">
+        <button type="submit" class="btn btn-primary">Continue</button>
+    </form>
+</div>
+{% endblock %}

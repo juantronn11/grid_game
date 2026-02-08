@@ -24,6 +24,7 @@ load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
 DATABASE_URL = os.environ.get("DATABASE_URL")
 SUPER_ADMIN_PASSWORD = os.environ.get("SUPER_ADMIN_PASSWORD", "admin1234")
 SUPERADMIN_DISCORD_WEBHOOK = os.environ.get("SUPERADMIN_DISCORD_WEBHOOK", "")
+HOST_ACCESS_CODE = os.environ.get("HOST_ACCESS_CODE", "")
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -317,6 +318,15 @@ def browse_games():
 
 @app.route("/create", methods=["GET", "POST"])
 def create_game():
+    if HOST_ACCESS_CODE and not session.get("host_verified"):
+        if request.method == "POST" and "access_code" in request.form:
+            if request.form["access_code"].strip() == HOST_ACCESS_CODE:
+                session["host_verified"] = True
+                return redirect(url_for("create_game"))
+            else:
+                flash("Invalid access code.", "error")
+        return render_template("host_gate.html")
+
     if request.method == "GET":
         return render_template("admin_create.html")
 
