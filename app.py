@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS games (
     is_complete INTEGER NOT NULL DEFAULT 0,
     numbers_released INTEGER NOT NULL DEFAULT 0,
     team_x      TEXT NOT NULL DEFAULT '',
-    team_y      TEXT NOT NULL DEFAULT ''
+    team_y      TEXT NOT NULL DEFAULT '',
+    payment_methods TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS claims (
@@ -69,6 +70,7 @@ MIGRATIONS = [
     "ALTER TABLE players ADD COLUMN phone TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE games ADD COLUMN team_x TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE games ADD COLUMN team_y TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE games ADD COLUMN payment_methods TEXT NOT NULL DEFAULT '[]'",
 ]
 
 
@@ -200,14 +202,22 @@ def create_game():
         flash("Passwords do not match.", "error")
         return redirect(url_for("create_game"))
 
+    payment_methods = []
+    pay_count = request.form.get("payment_count", 0, type=int)
+    for i in range(pay_count):
+        label = request.form.get(f"pay_label_{i}", "").strip()
+        user = request.form.get(f"pay_user_{i}", "").strip()
+        if label and user:
+            payment_methods.append({"label": label, "username": user})
+
     game_id = secrets.token_hex(4)
     now = datetime.datetime.now().isoformat()
 
     db = get_db()
     db.execute(
-        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y) "
-        "VALUES (?, ?, ?, ?, '[]', '[]', ?, ?)",
-        (game_id, name, generate_password_hash(password), now, team_x, team_y),
+        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods) "
+        "VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?)",
+        (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods)),
     )
     db.commit()
 
@@ -246,6 +256,8 @@ def game_view(game_id):
     col_numbers = json.loads(game["col_numbers"])
     row_numbers = json.loads(game["row_numbers"])
 
+    payment_methods = json.loads(game["payment_methods"]) if game["payment_methods"] else []
+
     return render_template(
         "game_grid.html",
         game=game,
@@ -255,6 +267,7 @@ def game_view(game_id):
         row_numbers=row_numbers,
         claim_count=claim_count,
         player_name=player_names[game_id],
+        payment_methods=payment_methods,
     )
 
 

@@ -13,6 +13,12 @@
         <label for="team_y">Team (rows — left axis)</label>
         <input type="text" name="team_y" id="team_y" placeholder="e.g. Eagles" required class="input">
 
+        <div class="payment-section">
+            <label>Payment Methods</label>
+            <div id="paymentRows"></div>
+            <button type="button" class="btn btn-secondary btn-small" onclick="addPaymentRow()">+ Add Payment Method</button>
+        </div>
+
         <label for="password">Admin Password</label>
         <input type="password" name="password" id="password" placeholder="Min 4 characters" required minlength="4" class="input">
 
@@ -22,4 +28,24 @@
         <button type="submit" class="btn btn-primary">Create Game</button>
     </form>
 </div>
+
+<script>
+let paymentCount = 0;
+function addPaymentRow() {
+    const i = paymentCount++;
+    const row = document.createElement('div');
+    row.className = 'payment-row';
+    row.innerHTML =
+        '<input type="text" name="pay_label_' + i + '" placeholder="e.g. CashApp, Venmo" required class="input payment-input">' +
+        '<input type="text" name="pay_user_' + i + '" placeholder="Username / handle" required class="input payment-input">' +
+        '<button type="button" class="btn btn-small btn-ban" onclick="this.parentElement.remove()">&times;</button>';
+    document.getElementById('paymentRows').appendChild(row);
+    document.querySelector('input[name="payment_count"]')?.remove();
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = 'payment_count';
+    hidden.value = paymentCount;
+    document.getElementById('paymentRows').appendChild(hidden);
+}
+</script>
 {% endblock %}

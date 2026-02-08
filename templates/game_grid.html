@@ -24,6 +24,15 @@
 <p class="hint">Click any open spot to claim it. Numbers will be revealed by the host after the board fills up.</p>
 {% endif %}
 
+{% if payment_methods %}
+<div class="payment-box">
+    <strong>Pay the host:</strong>
+    {% for pm in payment_methods %}
+    <span class="payment-item"><span class="payment-label">{{ pm.label }}:</span> {{ pm.username }}</span>
+    {% endfor %}
+</div>
+{% endif %}
+
 <div class="grid-wrapper">
     <div class="team-label-x">{{ game["team_x"] }}</div>
     <div class="grid-with-label">
