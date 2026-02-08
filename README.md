@@ -16,13 +16,21 @@ A web app for hosting football squares games. Create a 10x10 grid, invite player
 ### Requirements
 
 - Python 3.10+
-- pip
+- A Supabase account (free tier works) or any PostgreSQL database
 
 ### Install Dependencies
 
 ```
-pip install flask fpdf2 python-dotenv flask-wtf flask-limiter
+pip install -r requirements.txt
 ```
+
+### Set Up the Database
+
+1. Create a free project at [supabase.com](https://supabase.com)
+2. Go to **Project Settings > Database > Connection string > URI** (Transaction pooler, port 6543)
+3. Copy the connection string
+
+The app automatically creates all tables on first run.
 
 ### Configure Environment
 
@@ -31,6 +39,7 @@ Create a `.env` file in the project root:
 ```
 SUPER_ADMIN_PASSWORD=your_secure_password_here
 SECRET_KEY=your_random_secret_key_here
+DATABASE_URL=postgresql://postgres.XXXXX:YOUR_PASSWORD@aws-0-region.pooler.supabase.com:6543/postgres
 ```
 
 Generate a secret key:
@@ -39,15 +48,20 @@ Generate a secret key:
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-If no `.env` file exists, the app uses defaults (`admin1234` for super admin, random key per restart).
-
-### Run the App
+### Run Locally
 
 ```
 python app.py
 ```
 
-Open `http://localhost:5000` in your browser. The app listens on all interfaces (`0.0.0.0`) so other devices on your network can connect using your local IP.
+Open `http://localhost:5000` in your browser.
+
+### Deploy to Railway
+
+1. Push to GitHub
+2. Create a new project on [railway.app](https://railway.app) and connect your repo
+3. Add your environment variables (`SECRET_KEY`, `SUPER_ADMIN_PASSWORD`, `DATABASE_URL`) in Railway's dashboard
+4. Railway auto-detects the `Procfile` and deploys with gunicorn
 
 ## Features
 
@@ -57,6 +71,7 @@ Open `http://localhost:5000` in your browser. The app listens on all interfaces 
 - View all joined games in "My Games"
 - Download PDF of the completed grid
 - Request more squares if you hit the per-player limit
+- Duplicate name protection via phone number
 
 ### For Game Hosts
 - Set team names, square price, payout info
@@ -74,25 +89,23 @@ Open `http://localhost:5000` in your browser. The app listens on all interfaces 
 - Manage any game without needing its password
 - Lock/unlock or delete any game
 
-## Important Notes
+## Security
 
-- **Database**: SQLite (`game.db`) -- created automatically on first run
-- **Sessions**: Player and admin sessions are stored in browser cookies signed with `SECRET_KEY`. Changing the key logs everyone out (games and data are not affected)
-- **Debug mode**: Currently enabled (`debug=True` in `app.py`). Set to `False` before deploying publicly
--
-  ```
-  pip install waitress
-  waitress-serve --host=0.0.0.0 --port=5000 app:app
-  ```
+- **CSRF protection** on all forms via Flask-WTF
+- **Rate limiting** on login forms (5 attempts/minute per IP)
+- **Secure cookies** with HttpOnly and SameSite flags
+- **Reserved name blocking** ("VOID" cannot be used as a player name)
 
 ## Project Structure
 
 ```
 num_foot/
-  app.py              -- Main Flask app (all routes and database)
+  app.py              -- Main Flask app (routes, database, auth)
   game.py             -- Grid class and PDF export
-  .env                -- Passwords and secret key (not committed)
-  .gitignore          -- Ignores .env, game.db, grids/, etc.
+  requirements.txt    -- Python dependencies
+  Procfile            -- Production server config (gunicorn)
+  .env                -- Secrets and DB connection (not committed)
+  .gitignore          -- Ignores .env, grids/, __pycache__/
   static/
     style.css         -- Dark theme styles
   templates/
