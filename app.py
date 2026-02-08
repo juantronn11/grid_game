@@ -262,6 +262,49 @@ def is_superadmin():
     return session.get("is_superadmin", False)
 
 
+LOCKOUT_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
+
+def _check_lockout(session_key):
+    """Check if user is locked out. Returns (locked, remaining_seconds)."""
+    locked_until = session.get(f"{session_key}_locked_until")
+    if locked_until:
+        now = datetime.datetime.now()
+        until = datetime.datetime.fromisoformat(locked_until)
+        if now < until:
+            remaining = int((until - now).total_seconds())
+            return True, remaining
+        else:
+            session.pop(f"{session_key}_fails", None)
+            session.pop(f"{session_key}_locked_until", None)
+    return False, 0
+
+
+def _record_fail(session_key, route_label):
+    """Record failed attempt. Returns (is_now_locked, remaining_attempts)."""
+    fails = session.get(f"{session_key}_fails", 0) + 1
+    session[f"{session_key}_fails"] = fails
+    remaining = LOCKOUT_ATTEMPTS - fails
+
+    if remaining <= 0:
+        until = (datetime.datetime.now() + datetime.timedelta(minutes=LOCKOUT_MINUTES)).isoformat()
+        session[f"{session_key}_locked_until"] = until
+        send_discord_notification(
+            SUPERADMIN_DISCORD_WEBHOOK,
+            f"Brute-force lockout on {route_label} -- {LOCKOUT_ATTEMPTS} failed attempts from IP {request.remote_addr}",
+        )
+        return True, 0
+
+    return False, remaining
+
+
+def _clear_fails(session_key):
+    """Clear failed attempt counter on success."""
+    session.pop(f"{session_key}_fails", None)
+    session.pop(f"{session_key}_locked_until", None)
+
+
 def is_game_locked(game):
     if game["is_locked"]:
         return True
@@ -326,12 +369,22 @@ def index():
 @app.route("/games", methods=["GET", "POST"])
 def browse_games():
     if BROWSE_ACCESS_CODE and not session.get("browse_verified"):
+        locked, secs = _check_lockout("browse_gate")
+        if locked:
+            mins = max(1, secs // 60)
+            flash(f"Too many failed attempts. Try again in {mins} minute{'s' if mins != 1 else ''}.", "error")
+            return render_template("browse_gate.html")
         if request.method == "POST" and "access_code" in request.form:
             if request.form["access_code"].strip() == BROWSE_ACCESS_CODE:
+                _clear_fails("browse_gate")
                 session["browse_verified"] = True
                 return redirect(url_for("browse_games"))
             else:
-                flash("Invalid access code.", "error")
+                is_now_locked, remaining = _record_fail("browse_gate", "Browse Gate (/games)")
+                if is_now_locked:
+                    flash(f"Too many failed attempts. Try again in {LOCKOUT_MINUTES} minutes.", "error")
+                else:
+                    flash(f"Invalid access code. {remaining} attempt{'s' if remaining != 1 else ''} remaining.", "error")
         return render_template("browse_gate.html")
 
     cur = get_cursor()
@@ -362,12 +415,22 @@ def browse_games():
 @limiter.limit("5 per minute", methods=["POST"])
 def create_game():
     if HOST_ACCESS_CODE and not session.get("host_verified"):
+        locked, secs = _check_lockout("host_gate")
+        if locked:
+            mins = max(1, secs // 60)
+            flash(f"Too many failed attempts. Try again in {mins} minute{'s' if mins != 1 else ''}.", "error")
+            return render_template("host_gate.html")
         if request.method == "POST" and "access_code" in request.form:
             if request.form["access_code"].strip() == HOST_ACCESS_CODE:
+                _clear_fails("host_gate")
                 session["host_verified"] = True
                 return redirect(url_for("create_game"))
             else:
-                flash("Invalid access code.", "error")
+                is_now_locked, remaining = _record_fail("host_gate", "Host Gate (/create)")
+                if is_now_locked:
+                    flash(f"Too many failed attempts. Try again in {LOCKOUT_MINUTES} minutes.", "error")
+                else:
+                    flash(f"Invalid access code. {remaining} attempt{'s' if remaining != 1 else ''} remaining.", "error")
         return render_template("host_gate.html")
 
     if request.method == "GET":
@@ -478,10 +541,16 @@ def my_games():
 
 
 @app.route("/recover", methods=["GET", "POST"])
-@limiter.limit("5 per minute", methods=["POST"])
+@limiter.limit("3 per minute", methods=["POST"])
 def recover():
     if request.method == "GET":
         return render_template("recover.html")
+
+    locked, secs = _check_lockout("recover")
+    if locked:
+        mins = max(1, secs // 60)
+        flash(f"Too many failed attempts. Try again in {mins} minute{'s' if mins != 1 else ''}.", "error")
+        return redirect(url_for("recover"))
 
     name = request.form.get("name", "").strip()
     last4 = request.form.get("last4", "").strip()
@@ -504,9 +573,14 @@ def recover():
             matched.append(row["game_id"])
 
     if not matched:
-        flash("No games found for that name and phone number.", "error")
+        is_locked, remaining = _record_fail("recover", "Player Recovery (/recover)")
+        if is_locked:
+            flash(f"Too many failed attempts. Try again in {LOCKOUT_MINUTES} minutes.", "error")
+        else:
+            flash(f"No games found. {remaining} attempt{'s' if remaining != 1 else ''} remaining.", "error")
         return redirect(url_for("recover"))
 
+    _clear_fails("recover")
     player_names = session.get("player_names", {})
     for gid in matched:
         player_names[gid] = name
@@ -868,6 +942,12 @@ def admin_login():
     if request.method == "GET":
         return render_template("admin_recover.html")
 
+    locked, secs = _check_lockout("admin_login")
+    if locked:
+        mins = max(1, secs // 60)
+        flash(f"Too many failed attempts. Try again in {mins} minute{'s' if mins != 1 else ''}.", "error")
+        return redirect(url_for("admin_login"))
+
     game_id = request.form.get("game_id", "").strip().upper()
     password = request.form.get("password", "").strip()
 
@@ -879,9 +959,14 @@ def admin_login():
     cur.execute("SELECT admin_password_hash FROM games WHERE id = %s", (game_id,))
     game = cur.fetchone()
     if not game or not check_password_hash(game["admin_password_hash"], password):
-        flash("Invalid Game ID or password.", "error")
+        is_locked, remaining = _record_fail("admin_login", f"Host Login (/admin/login) for game '{game_id}'")
+        if is_locked:
+            flash(f"Too many failed attempts. Try again in {LOCKOUT_MINUTES} minutes.", "error")
+        else:
+            flash(f"Invalid Game ID or password. {remaining} attempt{'s' if remaining != 1 else ''} remaining.", "error")
         return redirect(url_for("admin_login"))
 
+    _clear_fails("admin_login")
     admin_games = session.get("admin_games", [])
     if game_id not in admin_games:
         admin_games.append(game_id)
@@ -927,14 +1012,25 @@ def admin_panel(game_id):
         abort(404)
 
     if not is_admin(game_id):
+        panel_key = f"admin_panel_{game_id}"
+        locked, secs = _check_lockout(panel_key)
+        if locked:
+            mins = max(1, secs // 60)
+            flash(f"Too many failed attempts. Try again in {mins} minute{'s' if mins != 1 else ''}.", "error")
+            return render_template("admin_login.html", game_id=game_id, game_name=game["name"])
         if request.method == "POST" and "admin_password" in request.form:
             if check_password_hash(game["admin_password_hash"], request.form["admin_password"]):
+                _clear_fails(panel_key)
                 admin_games = session.get("admin_games", [])
                 admin_games.append(game_id)
                 session["admin_games"] = admin_games
                 return redirect(url_for("admin_panel", game_id=game_id))
             else:
-                flash("Wrong password.", "error")
+                is_now_locked, remaining = _record_fail(panel_key, f"Admin Panel gate for game '{game_id}'")
+                if is_now_locked:
+                    flash(f"Too many failed attempts. Try again in {LOCKOUT_MINUTES} minutes.", "error")
+                else:
+                    flash(f"Wrong password. {remaining} attempt{'s' if remaining != 1 else ''} remaining.", "error")
         return render_template("admin_login.html", game_id=game_id, game_name=game["name"])
 
     grid, _ = build_grid_from_db(game_id)
@@ -1290,13 +1386,24 @@ def superadmin_login():
     if is_superadmin():
         return redirect(url_for("superadmin_dashboard"))
 
+    locked, secs = _check_lockout("superadmin")
+    if locked:
+        mins = max(1, secs // 60)
+        flash(f"Too many failed attempts. Try again in {mins} minute{'s' if mins != 1 else ''}.", "error")
+        return render_template("superadmin_login.html")
+
     if request.method == "POST":
         password = request.form.get("password", "").strip()
         if password == SUPER_ADMIN_PASSWORD:
+            _clear_fails("superadmin")
             session["is_superadmin"] = True
             return redirect(url_for("superadmin_dashboard"))
         else:
-            flash("Wrong password.", "error")
+            is_now_locked, remaining = _record_fail("superadmin", "Super Admin Login (/superadmin)")
+            if is_now_locked:
+                flash(f"Too many failed attempts. Try again in {LOCKOUT_MINUTES} minutes.", "error")
+            else:
+                flash(f"Wrong password. {remaining} attempt{'s' if remaining != 1 else ''} remaining.", "error")
 
     return render_template("superadmin_login.html")
 
