@@ -163,7 +163,10 @@ def send_discord_notification(webhook_url, message):
         data = json.dumps({"content": message}).encode("utf-8")
         req = urllib.request.Request(
             webhook_url, data=data,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "NumFootGrid/1.0",
+            },
         )
         urllib.request.urlopen(req, timeout=3)
     except Exception:
