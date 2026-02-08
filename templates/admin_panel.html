@@ -116,4 +116,19 @@
         </table>
     </div>
 </div>
+
+{% if messages %}
+<div class="card" style="margin-top:1.5rem;">
+    <h3>Player Messages ({{ messages|length }})</h3>
+    <div class="messages-list">
+        {% for msg in messages %}
+        <div class="message-item">
+            <strong>{{ msg["player_name"] }}</strong>
+            <span class="message-time">{{ msg["sent_at"][:16].replace("T", " ") }}</span>
+            <p class="message-text">{{ msg["message"] }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 {% endblock %}

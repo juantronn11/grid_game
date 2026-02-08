@@ -710,6 +710,40 @@ td.claimed:hover .remove-btn {
     white-space: nowrap;
 }
 
+/* ── Messages ─────────────────────────────────── */
+
+.messages-list {
+    margin-top: 0.75rem;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.message-item {
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid #21262d;
+}
+
+.message-item:last-child {
+    border-bottom: none;
+}
+
+.message-item strong {
+    color: #58a6ff;
+    font-size: 0.9rem;
+}
+
+.message-time {
+    color: #484f58;
+    font-size: 0.75rem;
+    margin-left: 0.5rem;
+}
+
+.message-text {
+    margin-top: 0.25rem;
+    color: #e1e4e8;
+    font-size: 0.9rem;
+}
+
 /* ── Responsive ────────────────────────────────── */
 
 @media (max-width: 768px) {

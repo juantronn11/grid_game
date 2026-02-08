@@ -96,4 +96,15 @@
         </table>
     </div>
 </div>
+
+{% if show_message_form %}
+<div class="card" style="margin-top:1.5rem;">
+    <h3>Message the Host</h3>
+    <form method="post" action="{{ url_for('message_host', game_id=game_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <textarea name="message" placeholder="Type your message to the host..." maxlength="500" required class="input" rows="2" style="resize:vertical;"></textarea>
+        <button type="submit" class="btn btn-primary btn-small" style="margin-top:0.5rem;">Send Message</button>
+    </form>
+</div>
+{% endif %}
 {% endblock %}

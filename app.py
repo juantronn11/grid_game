@@ -83,6 +83,15 @@ CREATE TABLE IF NOT EXISTS square_requests (
     requested_at TEXT NOT NULL,
     FOREIGN KEY (game_id) REFERENCES games(id)
 );
+
+CREATE TABLE IF NOT EXISTS messages (
+    id           SERIAL PRIMARY KEY,
+    game_id      TEXT NOT NULL,
+    player_name  TEXT NOT NULL,
+    message      TEXT NOT NULL,
+    sent_at      TEXT NOT NULL,
+    FOREIGN KEY (game_id) REFERENCES games(id)
+);
 """
 
 MIGRATIONS = [
@@ -116,6 +125,14 @@ MIGRATIONS = [
         FOREIGN KEY (game_id) REFERENCES games(id)
     )""",
     "ALTER TABLE games ADD COLUMN discord_webhook TEXT NOT NULL DEFAULT ''",
+    """CREATE TABLE IF NOT EXISTS messages (
+        id           SERIAL PRIMARY KEY,
+        game_id      TEXT NOT NULL,
+        player_name  TEXT NOT NULL,
+        message      TEXT NOT NULL,
+        sent_at      TEXT NOT NULL,
+        FOREIGN KEY (game_id) REFERENCES games(id)
+    )""",
 ]
 
 
@@ -453,6 +470,8 @@ def game_view(game_id):
         locked=locked,
         at_limit=at_limit,
         has_pending_request=has_pending_request,
+        has_webhook=bool(game["discord_webhook"]),
+        show_message_form=True,
     )
 
 
@@ -639,6 +658,43 @@ def player_pdf(game_id):
     )
 
 
+@app.route("/game/<game_id>/message-host", methods=["POST"])
+def message_host(game_id):
+    player_names = session.get("player_names", {})
+    if game_id not in player_names:
+        return redirect(url_for("join_game", game_id=game_id))
+
+    pname = player_names[game_id]
+    message = request.form.get("message", "").strip()
+    if not message:
+        flash("Please enter a message.", "error")
+        return redirect(url_for("game_view", game_id=game_id))
+    if len(message) > 500:
+        flash("Message must be 500 characters or less.", "error")
+        return redirect(url_for("game_view", game_id=game_id))
+
+    db = get_db()
+    cur = get_cursor()
+    cur.execute("SELECT name, discord_webhook FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
+    if not game:
+        abort(404)
+
+    now = datetime.datetime.now().isoformat()
+    cur.execute(
+        "INSERT INTO messages (game_id, player_name, message, sent_at) VALUES (%s, %s, %s, %s)",
+        (game_id, pname, message, now),
+    )
+    db.commit()
+
+    send_discord_notification(
+        game["discord_webhook"],
+        f"Message from '{pname}' in '{game['name']}':\n> {message}",
+    )
+    flash("Message sent to the host!", "success")
+    return redirect(url_for("game_view", game_id=game_id))
+
+
 @app.route("/game/<game_id>/request-squares", methods=["POST"])
 def request_squares(game_id):
     player_names = session.get("player_names", {})
@@ -737,6 +793,12 @@ def admin_panel(game_id):
     )
     pending_request_count = cur.fetchone()["cnt"]
 
+    cur.execute(
+        "SELECT player_name, message, sent_at FROM messages WHERE game_id = %s ORDER BY id DESC LIMIT 50",
+        (game_id,),
+    )
+    messages = cur.fetchall()
+
     return render_template(
         "admin_panel.html",
         game=game,
@@ -750,6 +812,7 @@ def admin_panel(game_id):
         has_numbers=has_numbers,
         locked=locked,
         pending_request_count=pending_request_count,
+        messages=messages,
     )
 
 
@@ -1074,6 +1137,7 @@ def superadmin_shutdown(game_id):
         abort(404)
 
     game_name = game["name"]
+    cur.execute("DELETE FROM messages WHERE game_id = %s", (game_id,))
     cur.execute("DELETE FROM square_requests WHERE game_id = %s", (game_id,))
     cur.execute("DELETE FROM claims WHERE game_id = %s", (game_id,))
     cur.execute("DELETE FROM players WHERE game_id = %s", (game_id,))
