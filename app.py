@@ -729,6 +729,8 @@ def game_view(game_id):
     at_limit = False
     has_pending_request = False
     max_claims = game["max_claims"]
+    my_claims = 0
+    allowed = 0
     if max_claims > 0:
         bonus = player["bonus_claims"] if player else 0
         allowed = max_claims + bonus
@@ -766,6 +768,8 @@ def game_view(game_id):
         locked=locked,
         at_limit=at_limit,
         has_pending_request=has_pending_request,
+        my_claims=my_claims,
+        allowed=allowed,
         chat_messages=chat_messages,
     )
 

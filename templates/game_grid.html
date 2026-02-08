@@ -28,7 +28,9 @@
     Board is full! Waiting for the host to release the numbers...
 </div>
 {% elif not locked %}
-<p class="hint">Click any open spot to claim it. Numbers will be revealed by the host after the board fills up.</p>
+<p class="hint">Tap any open spot to claim it.
+    {% if allowed > 0 %} You have {{ my_claims }}/{{ allowed }} squares claimed.{% endif %}
+    Numbers will be revealed by the host after the board fills up.</p>
 {% endif %}
 
 {% if game["square_price"] or game["payout_info"] %}
@@ -50,9 +52,9 @@
 {% if at_limit and not locked %}
 <div class="banner banner-waiting">
     {% if has_pending_request %}
-        You've used all your squares. Request pending — waiting for host approval.
+        You've used all {{ allowed }} of your squares. Request pending — waiting for host approval.
     {% else %}
-        You've used all your squares.
+        You've used all {{ allowed }} of your squares.
         <form method="post" action="{{ url_for('request_squares', game_id=game_id) }}" style="display:inline;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-small btn-release" style="margin-left:0.75rem;">Request More Squares</button>
