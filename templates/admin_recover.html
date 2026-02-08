@@ -7,7 +7,7 @@
     <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="game_id">Game ID</label>
-        <input type="text" name="game_id" id="game_id" placeholder="e.g. a1b2c3d4" maxlength="8" required class="input">
+        <input type="text" name="game_id" id="game_id" placeholder="e.g. ABC123" maxlength="8" required class="input" style="text-transform:uppercase">
         <label for="password">Admin Password</label>
         <input type="password" name="password" id="password" placeholder="Your game admin password" required class="input">
         <button type="submit" class="btn btn-primary">Login</button>

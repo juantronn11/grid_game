@@ -364,11 +364,23 @@ def create_game():
     max_claims = request.form.get("max_claims", 0, type=int)
     discord_webhook = request.form.get("discord_webhook", "").strip()
 
-    game_id = secrets.token_hex(4)
+    custom_code = request.form.get("custom_code", "").strip().upper()
+    if custom_code:
+        if len(custom_code) != 6 or not custom_code.isalnum():
+            flash("Game code must be exactly 6 alphanumeric characters.", "error")
+            return redirect(url_for("create_game"))
+        game_id = custom_code
+    else:
+        game_id = secrets.token_hex(3).upper()  # 6 hex chars
+
     now = datetime.datetime.now().isoformat()
 
     db = get_db()
     cur = get_cursor()
+    cur.execute("SELECT 1 FROM games WHERE id = %s", (game_id,))
+    if cur.fetchone():
+        flash("That game code is already taken. Try a different one.", "error")
+        return redirect(url_for("create_game"))
     cur.execute(
         "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods, square_price, payout_info, lock_at, max_claims, discord_webhook) "
         "VALUES (%s, %s, %s, %s, '[]', '[]', %s, %s, %s, %s, %s, %s, %s, %s)",
@@ -793,7 +805,7 @@ def admin_login():
     if request.method == "GET":
         return render_template("admin_recover.html")
 
-    game_id = request.form.get("game_id", "").strip()
+    game_id = request.form.get("game_id", "").strip().upper()
     password = request.form.get("password", "").strip()
 
     if not game_id or not password:

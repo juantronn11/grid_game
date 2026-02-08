@@ -5,7 +5,7 @@ A web app for hosting football squares games. Create a 10x10 grid, invite player
 ## How It Works
 
 1. **Host creates a game** -- sets team names, pricing, payment methods, and an optional auto-lock time
-2. **Host shares the link or Game ID** with players
+2. **Host shares the link or Game Code** with players (custom 6-character code or auto-generated)
 3. **Players join and claim squares** on the 10x10 grid
 4. **Host locks the grid** when ready (or it auto-locks at game time) -- unclaimed squares become VOID
 5. **Host releases the numbers** -- each row and column gets a random 0-9 digit
@@ -79,7 +79,7 @@ Open `http://localhost:5000` in your browser.
 ## Features
 
 ### For Players
-- Join games by link or Game ID
+- Join games by link or 6-character Game Code
 - Claim squares on the grid
 - View all joined games in "My Games"
 - Recover session if you lose access (name + last 4 digits of phone)
@@ -89,6 +89,7 @@ Open `http://localhost:5000` in your browser.
 - Duplicate name protection via phone number
 
 ### For Game Hosts
+- Choose a custom 6-character Game Code or auto-generate one
 - Set team names, square price, payout info
 - Add payment methods (CashApp, Venmo, etc.)
 - Set max squares per player

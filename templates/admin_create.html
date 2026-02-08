@@ -32,6 +32,9 @@
         <label for="max_claims">Max Squares Per Player (0 = unlimited)</label>
         <input type="number" name="max_claims" id="max_claims" placeholder="e.g. 5" min="0" value="0" class="input">
 
+        <label for="custom_code">Game Code (optional — 6 alphanumeric characters, or leave blank to auto-generate)</label>
+        <input type="text" name="custom_code" id="custom_code" placeholder="e.g. ABC123" maxlength="6" pattern="[A-Za-z0-9]{6}" class="input" style="text-transform:uppercase">
+
         <label for="discord_webhook">Discord Webhook URL (optional)</label>
         <input type="url" name="discord_webhook" id="discord_webhook" placeholder="https://discord.com/api/webhooks/..." class="input">
 
