@@ -25,6 +25,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 SUPER_ADMIN_PASSWORD = os.environ.get("SUPER_ADMIN_PASSWORD", "admin1234")
 SUPERADMIN_DISCORD_WEBHOOK = os.environ.get("SUPERADMIN_DISCORD_WEBHOOK", "")
 HOST_ACCESS_CODE = os.environ.get("HOST_ACCESS_CODE", "")
+BROWSE_ACCESS_CODE = os.environ.get("BROWSE_ACCESS_CODE", "")
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -292,8 +293,17 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/games")
+@app.route("/games", methods=["GET", "POST"])
 def browse_games():
+    if BROWSE_ACCESS_CODE and not session.get("browse_verified"):
+        if request.method == "POST" and "access_code" in request.form:
+            if request.form["access_code"].strip() == BROWSE_ACCESS_CODE:
+                session["browse_verified"] = True
+                return redirect(url_for("browse_games"))
+            else:
+                flash("Invalid access code.", "error")
+        return render_template("browse_gate.html")
+
     cur = get_cursor()
     cur.execute("SELECT * FROM games ORDER BY created_at DESC")
     all_games = cur.fetchall()
