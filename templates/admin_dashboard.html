@@ -33,6 +33,9 @@
             {% else %}
                 <span class="badge">In Progress</span>
             {% endif %}
+            {% if g.unread_count %}
+                <span class="badge badge-orange">{{ g.unread_count }} unread</span>
+            {% endif %}
         </div>
         <div class="game-card-actions">
             <a href="{{ url_for('admin_panel', game_id=g.id) }}" class="btn btn-secondary btn-small">Grid</a>

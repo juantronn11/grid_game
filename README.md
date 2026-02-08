@@ -84,6 +84,7 @@ Open `http://localhost:5000` in your browser.
 - Join games by link or 6-character Game Code
 - Claim squares on the grid
 - View all joined games in "My Games"
+- **User accounts** -- super admin creates accounts; log in from any device and your games persist
 - Recover session if you lose access (name + last 4 digits of phone)
 - Download PDF of the completed grid
 - Request more squares if you hit the per-player limit
@@ -100,14 +101,16 @@ Open `http://localhost:5000` in your browser.
 - Ban/unban players and remove individual claims
 - Approve or deny player requests for extra squares
 - Two-way chat with players (per-player threads on admin panel)
+- **Unread message badges** on admin dashboard and chat threads
 - "View as Player" button to preview the player experience
 - Download grid as PDF
 - Recover host access via Game ID + admin password ("Host Login")
-- Discord webhook notifications (player joins, claims, messages, requests, grid full)
+- Discord webhook notifications (player joins, claims, messages, requests, grid full, claim limit reached, lock/unlock)
 
 ### For Super Admin
 - Platform-level admin panel at `/superadmin`
-- View all games across the platform
+- View all games across the platform with unread message counts
+- **Create and manage user accounts** (username + password)
 - Manage any game without needing its password
 - Lock/unlock or delete any game
 - Discord webhook notifications for game events across the platform
@@ -122,6 +125,9 @@ Open `http://localhost:5000` in your browser.
 - **Secure cookies** with HttpOnly and SameSite flags
 - **HTTPS enforcement** via ProxyFix for reverse proxy deployments
 - **Cryptographically secure** number generation using Python's `secrets` module
+- **User session cap** -- max 50 game sessions stored per user account to prevent data bloat
+- **Deleted user auto-revoke** -- if superadmin deletes an account, active sessions are invalidated on next action
+- **SSRF protection** -- Discord webhook URLs validated against known prefixes
 - **Debug mode disabled** in production by default
 - **Reserved name blocking** ("VOID" cannot be used as a player name)
 
@@ -146,6 +152,7 @@ num_foot/
     game_grid.html    -- Player grid view + chat
     host_gate.html    -- Host access code gate
     browse_gate.html  -- Browse access code gate
+    user_login.html   -- User account login
     recover.html      -- Player session recovery
     admin_recover.html -- Host login recovery
     admin_create.html -- Create game form

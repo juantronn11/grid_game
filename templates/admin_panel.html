@@ -121,11 +121,14 @@
 
 {% if chat_threads %}
 <div class="card" style="margin-top:1.5rem;">
-    <h3>Player Chat ({{ chat_threads|length }} conversation{{ "s" if chat_threads|length > 1 else "" }})</h3>
+    <h3>Player Chat ({{ chat_threads|length }} conversation{{ "s" if chat_threads|length > 1 else "" }})
+        {% if unread_threads %}<span class="badge badge-orange">{{ unread_threads|length }} new</span>{% endif %}
+    </h3>
     {% for player, msgs in chat_threads.items() %}
     <div class="chat-thread-section">
         <button type="button" class="chat-thread-toggle" onclick="this.parentElement.classList.toggle('open')">
             <strong>{{ player }}</strong>
+            {% if player in unread_threads %}<span class="badge-unread-dot"></span>{% endif %}
             <span class="chat-count">{{ msgs|length }} msg{{ "s" if msgs|length > 1 else "" }}</span>
         </button>
         <div class="chat-thread-body">

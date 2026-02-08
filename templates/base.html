@@ -21,6 +21,12 @@
             {% if session.get("is_superadmin") %}
             <a href="{{ url_for('superadmin_dashboard') }}" class="header-link header-link-admin">Admin</a>
             {% endif %}
+            {% if session.get("user_id") %}
+            <span class="header-user">{{ session.get("username") }}</span>
+            <a href="{{ url_for('user_logout') }}" class="header-link">Logout</a>
+            {% else %}
+            <a href="{{ url_for('user_login') }}" class="header-link">Login</a>
+            {% endif %}
         </nav>
     </header>
     <main>

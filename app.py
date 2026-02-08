@@ -140,6 +140,14 @@ MIGRATIONS = [
         FOREIGN KEY (game_id) REFERENCES games(id)
     )""",
     "ALTER TABLE messages ADD COLUMN sender_type TEXT NOT NULL DEFAULT 'player'",
+    """CREATE TABLE IF NOT EXISTS users (
+        id            SERIAL PRIMARY KEY,
+        username      TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at    TEXT NOT NULL,
+        player_sessions TEXT NOT NULL DEFAULT '{}'
+    )""",
+    "ALTER TABLE messages ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0",
 ]
 
 
@@ -305,6 +313,36 @@ def _clear_fails(session_key):
     session.pop(f"{session_key}_locked_until", None)
 
 
+MAX_USER_GAME_SESSIONS = 50
+
+
+def _sync_user_sessions():
+    """Write session player_names to the logged-in user's DB record."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return
+    player_names = session.get("player_names", {})
+    # Cap stored sessions to prevent unbounded growth
+    if len(player_names) > MAX_USER_GAME_SESSIONS:
+        # Keep only the most recent entries (dict order = insertion order in Python 3.7+)
+        trimmed = dict(list(player_names.items())[-MAX_USER_GAME_SESSIONS:])
+        player_names = trimmed
+        session["player_names"] = player_names
+    db = get_db()
+    cur = get_cursor()
+    cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+    if not cur.fetchone():
+        # User was deleted while logged in — clear session
+        session.pop("user_id", None)
+        session.pop("username", None)
+        return
+    cur.execute(
+        "UPDATE users SET player_sessions = %s WHERE id = %s",
+        (json.dumps(player_names), user_id),
+    )
+    db.commit()
+
+
 def is_game_locked(game):
     if game["is_locked"]:
         return True
@@ -366,9 +404,75 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
+def user_login():
+    if session.get("user_id"):
+        return redirect(url_for("my_games"))
+
+    if request.method == "GET":
+        return render_template("user_login.html")
+
+    locked, secs = _check_lockout("user_login")
+    if locked:
+        mins = max(1, secs // 60)
+        flash(f"Too many failed attempts. Try again in {mins} minute{'s' if mins != 1 else ''}.", "error")
+        return redirect(url_for("user_login"))
+
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "").strip()
+    if not username or not password:
+        flash("Username and password are required.", "error")
+        return redirect(url_for("user_login"))
+
+    cur = get_cursor()
+    cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+    user = cur.fetchone()
+    if not user or not check_password_hash(user["password_hash"], password):
+        is_now_locked, remaining = _record_fail("user_login", f"User Login (/login) for '{username}'")
+        if is_now_locked:
+            flash(f"Too many failed attempts. Try again in {LOCKOUT_MINUTES} minutes.", "error")
+        else:
+            flash(f"Invalid username or password. {remaining} attempt{'s' if remaining != 1 else ''} remaining.", "error")
+        return redirect(url_for("user_login"))
+
+    _clear_fails("user_login")
+    session["user_id"] = user["id"]
+    session["username"] = user["username"]
+    session["browse_verified"] = True
+
+    # Merge DB-stored player sessions into current session
+    stored = json.loads(user["player_sessions"]) if user["player_sessions"] else {}
+    current = session.get("player_names", {})
+    merged = {**stored, **current}
+    session["player_names"] = merged
+    _sync_user_sessions()
+
+    flash(f"Welcome, {user['username']}!", "success")
+    return redirect(url_for("my_games"))
+
+
+@app.route("/logout")
+def user_logout():
+    session.pop("user_id", None)
+    session.pop("username", None)
+    flash("Logged out.", "success")
+    return redirect(url_for("index"))
+
+
 @app.route("/games", methods=["GET", "POST"])
 def browse_games():
-    if BROWSE_ACCESS_CODE and not session.get("browse_verified"):
+    # Logged-in users bypass browse gate; verify user still exists
+    user_bypass = False
+    if session.get("user_id"):
+        cur = get_cursor()
+        cur.execute("SELECT id FROM users WHERE id = %s", (session["user_id"],))
+        if cur.fetchone():
+            user_bypass = True
+        else:
+            session.pop("user_id", None)
+            session.pop("username", None)
+    if BROWSE_ACCESS_CODE and not session.get("browse_verified") and not user_bypass:
         locked, secs = _check_lockout("browse_gate")
         if locked:
             mins = max(1, secs // 60)
@@ -585,6 +689,7 @@ def recover():
     for gid in matched:
         player_names[gid] = name
     session["player_names"] = player_names
+    _sync_user_sessions()
 
     flash(f"Recovered {len(matched)} game{'s' if len(matched) != 1 else ''}!", "success")
     return redirect(url_for("my_games"))
@@ -607,6 +712,7 @@ def game_view(game_id):
         flash("You have been removed from this game.", "error")
         del player_names[game_id]
         session["player_names"] = player_names
+        _sync_user_sessions()
         return redirect(url_for("index"))
 
     grid, game = build_grid_from_db(game_id)
@@ -713,6 +819,7 @@ def join_game(game_id):
                 player_names = session.get("player_names", {})
                 player_names[game_id] = name
                 session["player_names"] = player_names
+                _sync_user_sessions()
                 return redirect(url_for("game_view", game_id=game_id))
             else:
                 # Different person, same name — append last 4 digits
@@ -730,6 +837,7 @@ def join_game(game_id):
                     player_names = session.get("player_names", {})
                     player_names[game_id] = name
                     session["player_names"] = player_names
+                    _sync_user_sessions()
                     return redirect(url_for("game_view", game_id=game_id))
 
         now = datetime.datetime.now().isoformat()
@@ -748,6 +856,7 @@ def join_game(game_id):
         player_names = session.get("player_names", {})
         player_names[game_id] = name
         session["player_names"] = player_names
+        _sync_user_sessions()
         return redirect(url_for("game_view", game_id=game_id))
 
     return render_template("join_game.html", game_id=game_id, game_name=game["name"], locked=False)
@@ -807,6 +916,20 @@ def claim_spot(game_id):
         db.commit()
         flash(f"You claimed row {row}, col {col}!", "success")
         send_discord_notification(game["discord_webhook"], f"'{player_names[game_id]}' claimed row {row}, col {col} in '{game['name']}'")
+        # Notify host if player just hit their claim limit
+        if max_claims > 0:
+            cur.execute(
+                "SELECT COUNT(*) as cnt FROM claims WHERE game_id = %s AND player_name = %s",
+                (game_id, player_names[game_id]),
+            )
+            new_count = cur.fetchone()["cnt"]
+            bonus = player["bonus_claims"] if player else 0
+            allowed = max_claims + bonus
+            if new_count >= allowed:
+                send_discord_notification(
+                    game["discord_webhook"],
+                    f"'{player_names[game_id]}' has reached their claim limit ({allowed} squares) in '{game['name']}'",
+                )
     except psycopg2.errors.UniqueViolation:
         db.rollback()
         flash("That spot was already taken! Pick another.", "error")
@@ -988,6 +1111,11 @@ def admin_dashboard():
         cur.execute("SELECT * FROM games WHERE id = %s", (gid,))
         game = cur.fetchone()
         if game:
+            cur.execute(
+                "SELECT COUNT(*) as cnt FROM messages WHERE game_id = %s AND sender_type = 'player' AND is_read = 0",
+                (gid,),
+            )
+            unread = cur.fetchone()["cnt"]
             games.append({
                 "id": game["id"],
                 "name": game["name"],
@@ -997,6 +1125,7 @@ def admin_dashboard():
                 "claim_count": get_claim_count(gid),
                 "player_count": get_player_count(gid),
                 "locked": is_game_locked(game),
+                "unread_count": unread,
             })
 
     return render_template("admin_dashboard.html", games=games)
@@ -1049,6 +1178,13 @@ def admin_panel(game_id):
     )
     pending_request_count = cur.fetchone()["cnt"]
 
+    # Capture unread threads before marking as read
+    cur.execute(
+        "SELECT DISTINCT player_name FROM messages WHERE game_id = %s AND sender_type = 'player' AND is_read = 0",
+        (game_id,),
+    )
+    unread_threads = {row["player_name"] for row in cur.fetchall()}
+
     cur.execute(
         "SELECT player_name, message, sent_at, sender_type FROM messages WHERE game_id = %s ORDER BY id ASC",
         (game_id,),
@@ -1060,6 +1196,14 @@ def admin_panel(game_id):
         if pname not in chat_threads:
             chat_threads[pname] = []
         chat_threads[pname].append(msg)
+
+    # Mark all player messages as read
+    db = get_db()
+    cur.execute(
+        "UPDATE messages SET is_read = 1 WHERE game_id = %s AND sender_type = 'player' AND is_read = 0",
+        (game_id,),
+    )
+    db.commit()
 
     return render_template(
         "admin_panel.html",
@@ -1075,6 +1219,7 @@ def admin_panel(game_id):
         locked=locked,
         pending_request_count=pending_request_count,
         chat_threads=chat_threads,
+        unread_threads=unread_threads,
     )
 
 
@@ -1277,6 +1422,7 @@ def admin_lock(game_id):
             cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
         db.commit()
         send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game['name']}' UNLOCKED (ID: {game_id})")
+        send_discord_notification(game["discord_webhook"], f"Game '{game['name']}' has been UNLOCKED by the host")
         flash("Game unlocked. Players can join and claim spots again.", "success")
     else:
         # Lock: fill unclaimed spots with VOID
@@ -1291,6 +1437,7 @@ def admin_lock(game_id):
         cur.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = %s", (game_id,))
         db.commit()
         send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game['name']}' LOCKED (ID: {game_id})")
+        send_discord_notification(game["discord_webhook"], f"Game '{game['name']}' has been LOCKED by the host")
         flash("Game locked. Unclaimed spots marked as VOID.", "success")
 
     return redirect(url_for("admin_panel", game_id=game_id))
@@ -1419,6 +1566,11 @@ def superadmin_dashboard():
 
     games = []
     for game in all_games:
+        cur.execute(
+            "SELECT COUNT(*) as cnt FROM messages WHERE game_id = %s AND sender_type = 'player' AND is_read = 0",
+            (game["id"],),
+        )
+        unread = cur.fetchone()["cnt"]
         games.append({
             "id": game["id"],
             "name": game["name"],
@@ -1430,9 +1582,16 @@ def superadmin_dashboard():
             "locked": is_game_locked(game),
             "is_locked": game["is_locked"],
             "numbers_released": game["numbers_released"],
+            "unread_count": unread,
         })
 
-    return render_template("superadmin_dashboard.html", games=games)
+    cur.execute("SELECT * FROM users ORDER BY created_at DESC")
+    users = cur.fetchall()
+    for u in users:
+        sessions = json.loads(u["player_sessions"]) if u["player_sessions"] else {}
+        u["game_count"] = len(sessions)
+
+    return render_template("superadmin_dashboard.html", games=games, users=users)
 
 
 @app.route("/superadmin/shutdown/<game_id>", methods=["POST"])
@@ -1501,6 +1660,60 @@ def superadmin_lock(game_id):
         send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game['name']}' LOCKED by Super Admin (ID: {game_id})")
         flash("Game locked.", "success")
 
+    return redirect(url_for("superadmin_dashboard"))
+
+
+@app.route("/superadmin/create-user", methods=["POST"])
+def superadmin_create_user():
+    if not is_superadmin():
+        abort(403)
+
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "").strip()
+    if not username or not password:
+        flash("Username and password are required.", "error")
+        return redirect(url_for("superadmin_dashboard"))
+    if len(username) > 30:
+        flash("Username must be 30 characters or less.", "error")
+        return redirect(url_for("superadmin_dashboard"))
+    if len(password) < 4:
+        flash("Password must be at least 4 characters.", "error")
+        return redirect(url_for("superadmin_dashboard"))
+
+    db = get_db()
+    cur = get_cursor()
+    now = datetime.datetime.now().isoformat()
+    try:
+        cur.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (%s, %s, %s)",
+            (username, generate_password_hash(password), now),
+        )
+        db.commit()
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"New user account created: '{username}'")
+        flash(f"User '{username}' created.", "success")
+    except psycopg2.errors.UniqueViolation:
+        db.rollback()
+        flash("That username already exists.", "error")
+
+    return redirect(url_for("superadmin_dashboard"))
+
+
+@app.route("/superadmin/delete-user/<int:user_id>", methods=["POST"])
+def superadmin_delete_user(user_id):
+    if not is_superadmin():
+        abort(403)
+
+    db = get_db()
+    cur = get_cursor()
+    cur.execute("SELECT username FROM users WHERE id = %s", (user_id,))
+    user = cur.fetchone()
+    if not user:
+        abort(404)
+
+    cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    db.commit()
+    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"User account deleted: '{user['username']}'")
+    flash(f"User '{user['username']}' deleted.", "success")
     return redirect(url_for("superadmin_dashboard"))
 
 
