@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Recover My Games{% endblock %}
+{% block content %}
+<div class="card center-card">
+    <h2>Recover My Games</h2>
+    <p>Lost your session? Enter the name and phone number you used when joining to recover your games.</p>
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="name">Your Name</label>
+        <input type="text" name="name" id="name" placeholder="Exactly as you entered it" required class="input">
+        <label for="last4">Last 4 Digits of Phone</label>
+        <input type="text" name="last4" id="last4" placeholder="e.g. 1234" maxlength="4" pattern="\d{4}" required class="input">
+        <button type="submit" class="btn btn-primary">Recover Games</button>
+    </form>
+</div>
+{% endblock %}

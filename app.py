@@ -420,6 +420,45 @@ def my_games():
     return render_template("my_games.html", games=games)
 
 
+@app.route("/recover", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
+def recover():
+    if request.method == "GET":
+        return render_template("recover.html")
+
+    name = request.form.get("name", "").strip()
+    last4 = request.form.get("last4", "").strip()
+
+    if not name or not last4 or len(last4) != 4 or not last4.isdigit():
+        flash("Enter your name and the last 4 digits of your phone.", "error")
+        return redirect(url_for("recover"))
+
+    cur = get_cursor()
+    cur.execute(
+        "SELECT game_id, player_name, phone FROM players WHERE player_name = %s AND is_banned = 0",
+        (name,),
+    )
+    rows = cur.fetchall()
+
+    matched = []
+    for row in rows:
+        stored_digits = "".join(c for c in row["phone"] if c.isdigit())[-4:]
+        if stored_digits == last4:
+            matched.append(row["game_id"])
+
+    if not matched:
+        flash("No games found for that name and phone number.", "error")
+        return redirect(url_for("recover"))
+
+    player_names = session.get("player_names", {})
+    for gid in matched:
+        player_names[gid] = name
+    session["player_names"] = player_names
+
+    flash(f"Recovered {len(matched)} game{'s' if len(matched) != 1 else ''}!", "success")
+    return redirect(url_for("my_games"))
+
+
 @app.route("/game/<game_id>")
 def game_view(game_id):
     player_names = session.get("player_names", {})
