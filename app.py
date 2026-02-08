@@ -268,10 +268,32 @@ def is_game_locked(game):
     lock_at = game["lock_at"]
     if lock_at:
         try:
-            return datetime.datetime.now() >= datetime.datetime.fromisoformat(lock_at)
+            if datetime.datetime.now() >= datetime.datetime.fromisoformat(lock_at):
+                _materialize_auto_lock(game["id"])
+                return True
         except ValueError:
             return False
     return False
+
+
+def _materialize_auto_lock(game_id):
+    """Convert a time-based auto-lock into a permanent lock with VOID squares."""
+    db = get_db()
+    cur = get_cursor()
+    cur.execute("SELECT is_locked FROM games WHERE id = %s", (game_id,))
+    check = cur.fetchone()
+    if check and check["is_locked"]:
+        return  # already materialized
+    now = datetime.datetime.now().isoformat()
+    for r in range(1, 11):
+        for c in range(1, 11):
+            cur.execute(
+                'INSERT INTO claims (game_id, "row", col, player_name, claimed_at) '
+                'VALUES (%s, %s, %s, %s, %s) ON CONFLICT (game_id, "row", col) DO NOTHING',
+                (game_id, r, c, 'VOID', now),
+            )
+    cur.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = %s", (game_id,))
+    db.commit()
 
 
 def generate_and_store_numbers(game_id):
@@ -1127,18 +1149,20 @@ def admin_lock(game_id):
 
     db = get_db()
     cur = get_cursor()
-    cur.execute("SELECT is_locked, name FROM games WHERE id = %s", (game_id,))
+    cur.execute("SELECT * FROM games WHERE id = %s", (game_id,))
     game = cur.fetchone()
     if not game:
         abort(404)
 
-    if game["is_locked"]:
-        # Unlock: remove VOID claims and reopen
+    currently_locked = is_game_locked(game)
+
+    if currently_locked:
+        # Unlock: remove VOID claims, clear both lock flags
         cur.execute(
             "DELETE FROM claims WHERE game_id = %s AND player_name = 'VOID'",
             (game_id,),
         )
-        cur.execute("UPDATE games SET is_locked = 0 WHERE id = %s", (game_id,))
+        cur.execute("UPDATE games SET is_locked = 0, lock_at = '' WHERE id = %s", (game_id,))
         count = get_claim_count(game_id)
         if count < 100:
             cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
@@ -1324,17 +1348,19 @@ def superadmin_lock(game_id):
 
     db = get_db()
     cur = get_cursor()
-    cur.execute("SELECT is_locked, name FROM games WHERE id = %s", (game_id,))
+    cur.execute("SELECT * FROM games WHERE id = %s", (game_id,))
     game = cur.fetchone()
     if not game:
         abort(404)
 
-    if game["is_locked"]:
+    currently_locked = is_game_locked(game)
+
+    if currently_locked:
         cur.execute(
             "DELETE FROM claims WHERE game_id = %s AND player_name = 'VOID'",
             (game_id,),
         )
-        cur.execute("UPDATE games SET is_locked = 0 WHERE id = %s", (game_id,))
+        cur.execute("UPDATE games SET is_locked = 0, lock_at = '' WHERE id = %s", (game_id,))
         count = get_claim_count(game_id)
         if count < 100:
             cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
