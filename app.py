@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import random
 import secrets
@@ -458,6 +459,75 @@ def user_logout():
     session.pop("username", None)
     flash("Logged out.", "success")
     return redirect(url_for("index"))
+
+
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
+_RESERVED_NAMES = {"admin", "host", "superadmin", "void", "system", "mod", "moderator", "root", "null"}
+
+
+@app.route("/register", methods=["POST"])
+@limiter.limit("3 per minute")
+def user_register():
+    if session.get("user_id"):
+        return redirect(url_for("my_games"))
+
+    locked, secs = _check_lockout("user_register")
+    if locked:
+        mins = max(1, secs // 60)
+        flash(f"Too many attempts. Try again in {mins} minute{'s' if mins != 1 else ''}.", "error")
+        return redirect(url_for("index"))
+
+    username = request.form.get("reg_username", "").strip()
+    password = request.form.get("reg_password", "").strip()
+    confirm = request.form.get("reg_confirm", "").strip()
+
+    if not username or not password or not confirm:
+        flash("All fields are required.", "error")
+        return redirect(url_for("index"))
+    if len(username) < 3 or len(username) > 20:
+        flash("Username must be 3-20 characters.", "error")
+        return redirect(url_for("index"))
+    if not _USERNAME_RE.match(username):
+        flash("Username can only contain letters, numbers, and underscores.", "error")
+        return redirect(url_for("index"))
+    if username.lower() in _RESERVED_NAMES:
+        flash("That username is not allowed.", "error")
+        return redirect(url_for("index"))
+    if len(password) < 6:
+        flash("Password must be at least 6 characters.", "error")
+        return redirect(url_for("index"))
+    if password != confirm:
+        flash("Passwords do not match.", "error")
+        return redirect(url_for("index"))
+
+    db = get_db()
+    cur = get_cursor()
+    now = datetime.datetime.now().isoformat()
+    try:
+        cur.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (%s, %s, %s) RETURNING id",
+            (username, generate_password_hash(password), now),
+        )
+        new_user = cur.fetchone()
+        db.commit()
+    except psycopg2.errors.UniqueViolation:
+        db.rollback()
+        flash("That username is already taken.", "error")
+        return redirect(url_for("index"))
+
+    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"New account registered: '{username}' (self-signup from IP {request.remote_addr})")
+
+    session["user_id"] = new_user["id"]
+    session["username"] = username
+    session["browse_verified"] = True
+
+    # Merge any existing anonymous sessions into the new account
+    player_names = session.get("player_names", {})
+    if player_names:
+        _sync_user_sessions()
+
+    flash(f"Account created! Welcome, {username}.", "success")
+    return redirect(url_for("my_games"))
 
 
 @app.route("/games", methods=["GET", "POST"])

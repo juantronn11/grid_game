@@ -932,3 +932,38 @@ td.claimed:hover .remove-btn {
     font-size: 0.8rem;
     height: auto;
 }
+
+.account-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #30363d;
+}
+
+.account-tab {
+    flex: 1;
+    padding: 0.6rem 1rem;
+    background: none;
+    border: none;
+    color: #8b949e;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.account-tab:hover {
+    color: #e1e4e8;
+}
+
+.account-tab.active {
+    color: #58a6ff;
+    border-bottom-color: #58a6ff;
+}
+
+.field-hint {
+    color: #8b949e;
+    font-size: 0.75rem;
+    font-weight: 400;
+}

@@ -16,6 +16,53 @@
     <p style="margin-top:1.5rem;font-size:0.85rem;color:#8b949e;">Returning player? <a href="{{ url_for('recover') }}" style="color:#58a6ff;">Recover your games</a></p>
 </div>
 
+{% if session.get("user_id") %}
+<div class="card center-card" style="margin-top:1rem;">
+    <p>Logged in as <strong>{{ session.get("username") }}</strong></p>
+    <a href="{{ url_for('my_games') }}" class="btn btn-secondary" style="margin-top:0.5rem;">My Games</a>
+</div>
+{% else %}
+<div class="card center-card" style="margin-top:1rem;">
+    <div class="account-tabs">
+        <button type="button" class="account-tab active" onclick="showAccountTab('login')">Log In</button>
+        <button type="button" class="account-tab" onclick="showAccountTab('register')">Create Account</button>
+    </div>
+
+    <div id="tab-login" class="account-tab-panel">
+        <form method="post" action="{{ url_for('user_login') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="login_username">Username</label>
+            <input type="text" name="username" id="login_username" placeholder="Username" required class="input" autocomplete="username" maxlength="20">
+            <label for="login_password">Password</label>
+            <input type="password" name="password" id="login_password" placeholder="Password" required class="input" autocomplete="current-password">
+            <button type="submit" class="btn btn-primary">Log In</button>
+        </form>
+    </div>
+
+    <div id="tab-register" class="account-tab-panel" style="display:none;">
+        <form method="post" action="{{ url_for('user_register') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="reg_username">Username <span class="field-hint">(3-20 chars, letters/numbers/underscores)</span></label>
+            <input type="text" name="reg_username" id="reg_username" placeholder="Choose a username" required class="input" autocomplete="username" maxlength="20" minlength="3" pattern="[A-Za-z0-9_]+">
+            <label for="reg_password">Password <span class="field-hint">(min 6 characters)</span></label>
+            <input type="password" name="reg_password" id="reg_password" placeholder="Choose a password" required class="input" autocomplete="new-password" minlength="6">
+            <label for="reg_confirm">Confirm Password</label>
+            <input type="password" name="reg_confirm" id="reg_confirm" placeholder="Confirm password" required class="input" autocomplete="new-password" minlength="6">
+            <button type="submit" class="btn btn-primary">Create Account</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+function showAccountTab(tab) {
+    document.getElementById('tab-login').style.display = tab === 'login' ? '' : 'none';
+    document.getElementById('tab-register').style.display = tab === 'register' ? '' : 'none';
+    document.querySelectorAll('.account-tab').forEach(function(el) { el.classList.remove('active'); });
+    event.target.classList.add('active');
+}
+</script>
+
 <script>
 function joinGame() {
     const id = document.getElementById('gameId').value.trim().toUpperCase();
