@@ -460,21 +460,16 @@ label {
 
 .game-grid {
     border-collapse: collapse;
-    width: 100%;
-    min-width: 660px;
     table-layout: fixed;
 }
-
-/* Column widths via colgroup — match cell height for square cells */
-.col-team   { width: 48px; }
-.col-number { width: 48px; }
 
 .game-grid th,
 .game-grid td {
     border: 1px solid #30363d;
     text-align: center;
     vertical-align: middle;
-    height: 48px;
+    width: 64px;
+    height: 64px;
     font-size: 0.85rem;
     position: relative;
     padding: 2px;
@@ -484,28 +479,41 @@ label {
     background: #1c2028;
 }
 
-.team-label {
-    background: #1c2028;
-    color: #e1e4e8;
-    font-size: 1rem !important;
+.number-cell {
+    background: #1c2533;
+    color: #58a6ff;
+    font-size: 1.1rem !important;
     font-weight: 700;
-    letter-spacing: 0.05em;
+}
+
+/* Team labels sit outside the table */
+.team-label-x {
+    text-align: center;
+    color: #e1e4e8;
+    font-size: 1.1rem;
+    font-weight: 700;
     text-transform: uppercase;
-    border: 1px solid #30363d;
+    letter-spacing: 0.05em;
+    padding: 0.5rem 0;
+    margin-left: 40px;
+}
+
+.grid-with-label {
+    display: flex;
+    align-items: center;
 }
 
 .team-label-y {
     writing-mode: vertical-lr;
     text-orientation: mixed;
     transform: rotate(180deg);
-    padding: 0.4rem 0.15rem;
-}
-
-.number-cell {
-    background: #1c2533;
-    color: #58a6ff;
-    font-size: 1.1rem !important;
+    color: #e1e4e8;
+    font-size: 1.1rem;
     font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0 0.4rem;
+    text-align: center;
 }
 
 td.claimed {
@@ -605,18 +613,21 @@ td.claimed:hover .remove-btn {
 
     .game-grid th,
     .game-grid td {
-        height: 38px;
+        width: 50px;
+        height: 50px;
         font-size: 0.7rem;
     }
-
-    .col-team   { width: 38px; }
-    .col-number { width: 38px; }
 
     .number-cell {
         font-size: 0.9rem !important;
     }
 
-    .team-label {
-        font-size: 0.8rem !important;
+    .team-label-x,
+    .team-label-y {
+        font-size: 0.9rem;
+    }
+
+    .team-label-x {
+        margin-left: 30px;
     }
 }

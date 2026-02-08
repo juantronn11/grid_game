@@ -25,45 +25,35 @@
 {% endif %}
 
 <div class="grid-wrapper">
-    <table class="game-grid">
-        <colgroup>
-            <col class="col-team">
-            <col class="col-number">
-            {% for c in range(10) %}
-            <col class="col-data">
+    <div class="team-label-x">{{ game["team_x"] }}</div>
+    <div class="grid-with-label">
+        <div class="team-label-y">{{ game["team_y"] }}</div>
+        <table class="game-grid">
+            <tr>
+                <th class="corner-cell"></th>
+                {% for c in range(10) %}
+                <th class="number-cell">{% if game["numbers_released"] %}{{ col_numbers[c] }}{% else %}?{% endif %}</th>
+                {% endfor %}
+            </tr>
+            {% for r in range(1, 11) %}
+            <tr>
+                <th class="number-cell">{% if game["numbers_released"] %}{{ row_numbers[r-1] }}{% else %}?{% endif %}</th>
+                {% for c in range(1, 11) %}
+                <td class="{% if grid[r][c] %}claimed{% else %}open{% endif %}">
+                    {% if grid[r][c] %}
+                        <span class="player-name">{{ grid[r][c] }}</span>
+                    {% else %}
+                        <form method="post" action="{{ url_for('claim_spot', game_id=game_id) }}">
+                            <input type="hidden" name="row" value="{{ r }}">
+                            <input type="hidden" name="col" value="{{ c }}">
+                            <button type="submit" class="claim-btn"></button>
+                        </form>
+                    {% endif %}
+                </td>
+                {% endfor %}
+            </tr>
             {% endfor %}
-        </colgroup>
-        <tr>
-            <th class="corner-cell" colspan="2"></th>
-            <th colspan="10" class="team-label">{{ game["team_x"] }}</th>
-        </tr>
-        <tr>
-            <th class="corner-cell" colspan="2"></th>
-            {% for c in range(10) %}
-            <th class="number-cell">{% if game["numbers_released"] %}{{ col_numbers[c] }}{% else %}?{% endif %}</th>
-            {% endfor %}
-        </tr>
-        {% for r in range(1, 11) %}
-        <tr>
-            {% if r == 1 %}
-            <th class="team-label team-label-y" rowspan="10">{{ game["team_y"] }}</th>
-            {% endif %}
-            <th class="number-cell">{% if game["numbers_released"] %}{{ row_numbers[r-1] }}{% else %}?{% endif %}</th>
-            {% for c in range(1, 11) %}
-            <td class="{% if grid[r][c] %}claimed{% else %}open{% endif %}">
-                {% if grid[r][c] %}
-                    <span class="player-name">{{ grid[r][c] }}</span>
-                {% else %}
-                    <form method="post" action="{{ url_for('claim_spot', game_id=game_id) }}">
-                        <input type="hidden" name="row" value="{{ r }}">
-                        <input type="hidden" name="col" value="{{ c }}">
-                        <button type="submit" class="claim-btn"></button>
-                    </form>
-                {% endif %}
-            </td>
-            {% endfor %}
-        </tr>
-        {% endfor %}
-    </table>
+        </table>
+    </div>
 </div>
 {% endblock %}
