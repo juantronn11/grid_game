@@ -465,8 +465,8 @@ label {
     table-layout: fixed;
 }
 
-/* Column widths via colgroup */
-.col-team   { width: 36px; }
+/* Column widths via colgroup — match cell height for square cells */
+.col-team   { width: 48px; }
 .col-number { width: 48px; }
 
 .game-grid th,
@@ -492,14 +492,13 @@ label {
     letter-spacing: 0.05em;
     text-transform: uppercase;
     border: 1px solid #30363d;
-    height: 32px;
 }
 
 .team-label-y {
     writing-mode: vertical-lr;
     text-orientation: mixed;
     transform: rotate(180deg);
-    padding: 0.5rem 0.25rem;
+    padding: 0.4rem 0.15rem;
 }
 
 .number-cell {
@@ -610,7 +609,7 @@ td.claimed:hover .remove-btn {
         font-size: 0.7rem;
     }
 
-    .col-team   { width: 28px; }
+    .col-team   { width: 38px; }
     .col-number { width: 38px; }
 
     .number-cell {
