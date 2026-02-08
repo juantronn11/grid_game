@@ -783,6 +783,14 @@ def message_host(game_id):
         return redirect(url_for("join_game", game_id=game_id))
 
     pname = player_names[game_id]
+
+    cur = get_cursor()
+    cur.execute("SELECT is_banned FROM players WHERE game_id = %s AND player_name = %s", (game_id, pname))
+    player = cur.fetchone()
+    if player and player["is_banned"]:
+        flash("You have been removed from this game.", "error")
+        return redirect(url_for("index"))
+
     message = request.form.get("message", "").strip()
     if not message:
         flash("Please enter a message.", "error")
@@ -792,7 +800,6 @@ def message_host(game_id):
         return redirect(url_for("game_view", game_id=game_id))
 
     db = get_db()
-    cur = get_cursor()
     cur.execute("SELECT name, discord_webhook FROM games WHERE id = %s", (game_id,))
     game = cur.fetchone()
     if not game:
@@ -822,6 +829,12 @@ def request_squares(game_id):
     db = get_db()
     cur = get_cursor()
     pname = player_names[game_id]
+
+    cur.execute("SELECT is_banned FROM players WHERE game_id = %s AND player_name = %s", (game_id, pname))
+    player = cur.fetchone()
+    if player and player["is_banned"]:
+        flash("You have been removed from this game.", "error")
+        return redirect(url_for("index"))
 
     cur.execute(
         "SELECT id FROM square_requests WHERE game_id = %s AND player_name = %s AND status = 'pending'",
