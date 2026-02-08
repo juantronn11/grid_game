@@ -80,6 +80,8 @@
     {% else %}
     <span class="btn btn-disabled">Download PDF (no numbers yet)</span>
     {% endif %}
+
+    <a href="{{ url_for('game_view', game_id=game_id) }}" target="_blank" class="btn btn-secondary">View as Player</a>
 </div>
 
 <div class="grid-wrapper">
