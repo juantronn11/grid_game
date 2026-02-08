@@ -1083,8 +1083,9 @@ def superadmin_logout():
     return redirect(url_for("index"))
 
 
+init_db()
+
 if __name__ == "__main__":
-    init_db()
     print("Starting Number Football Grid server...")
     print("Open http://localhost:5000 in your browser")
     app.run(debug=True, host="0.0.0.0", port=5000)
