@@ -47,6 +47,20 @@
 </div>
 {% endif %}
 
+{% if at_limit and not locked %}
+<div class="banner banner-waiting">
+    {% if has_pending_request %}
+        You've used all your squares. Request pending — waiting for host approval.
+    {% else %}
+        You've used all your squares.
+        <form method="post" action="{{ url_for('request_squares', game_id=game_id) }}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-small btn-release" style="margin-left:0.75rem;">Request More Squares</button>
+        </form>
+    {% endif %}
+</div>
+{% endif %}
+
 <div class="grid-wrapper">
     <div class="team-label-x">{{ game["team_x"] }}</div>
     <div class="grid-with-label">
@@ -69,6 +83,7 @@
                         <span class="player-name">{{ grid[r][c] }}</span>
                     {% else %}
                         <form method="post" action="{{ url_for('claim_spot', game_id=game_id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="row" value="{{ r }}">
                             <input type="hidden" name="col" value="{{ c }}">
                             <button type="submit" class="claim-btn"></button>

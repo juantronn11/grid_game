@@ -10,6 +10,9 @@ from flask import (
     url_for, flash, session, g, send_file, abort,
 )
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from game import NameGrid, export_grid_to_pdf
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,7 +21,9 @@ DATABASE = os.path.join(SCRIPT_DIR, "game.db")
 SUPER_ADMIN_PASSWORD = os.environ.get("SUPER_ADMIN_PASSWORD", "admin1234")
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(16)
+app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(16))
+csrf = CSRFProtect(app)
+limiter = Limiter(get_remote_address, app=app, default_limits=[])
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS games (
@@ -36,7 +41,8 @@ CREATE TABLE IF NOT EXISTS games (
     is_locked   INTEGER NOT NULL DEFAULT 0,
     lock_at     TEXT NOT NULL DEFAULT '',
     square_price TEXT NOT NULL DEFAULT '',
-    payout_info TEXT NOT NULL DEFAULT ''
+    payout_info TEXT NOT NULL DEFAULT '',
+    max_claims  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS claims (
@@ -57,8 +63,18 @@ CREATE TABLE IF NOT EXISTS players (
     phone       TEXT NOT NULL DEFAULT '',
     joined_at   TEXT NOT NULL,
     is_banned   INTEGER NOT NULL DEFAULT 0,
+    bonus_claims INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (game_id) REFERENCES games(id),
     UNIQUE(game_id, player_name)
+);
+
+CREATE TABLE IF NOT EXISTS square_requests (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id      TEXT NOT NULL,
+    player_name  TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pending',
+    requested_at TEXT NOT NULL,
+    FOREIGN KEY (game_id) REFERENCES games(id)
 );
 """
 
@@ -82,6 +98,16 @@ MIGRATIONS = [
     "ALTER TABLE games ADD COLUMN lock_at TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE games ADD COLUMN square_price TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE games ADD COLUMN payout_info TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE games ADD COLUMN max_claims INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE players ADD COLUMN bonus_claims INTEGER NOT NULL DEFAULT 0",
+    """CREATE TABLE IF NOT EXISTS square_requests (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id      TEXT NOT NULL,
+        player_name  TEXT NOT NULL,
+        status       TEXT NOT NULL DEFAULT 'pending',
+        requested_at TEXT NOT NULL,
+        FOREIGN KEY (game_id) REFERENCES games(id)
+    )""",
 ]
 
 
@@ -267,15 +293,16 @@ def create_game():
     square_price = request.form.get("square_price", "").strip()
     payout_info = request.form.get("payout_info", "").strip()
     lock_at = request.form.get("lock_at", "").strip()
+    max_claims = request.form.get("max_claims", 0, type=int)
 
     game_id = secrets.token_hex(4)
     now = datetime.datetime.now().isoformat()
 
     db = get_db()
     db.execute(
-        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods, square_price, payout_info, lock_at) "
-        "VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?, ?)",
-        (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods), square_price, payout_info, lock_at),
+        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods, square_price, payout_info, lock_at, max_claims) "
+        "VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?, ?, ?)",
+        (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods), square_price, payout_info, lock_at, max_claims),
     )
     db.commit()
 
@@ -326,9 +353,10 @@ def game_view(game_id):
         return redirect(url_for("join_game", game_id=game_id))
 
     db = get_db()
+    pname = player_names[game_id]
     player = db.execute(
-        "SELECT is_banned FROM players WHERE game_id = ? AND player_name = ?",
-        (game_id, player_names[game_id]),
+        "SELECT is_banned, bonus_claims FROM players WHERE game_id = ? AND player_name = ?",
+        (game_id, pname),
     ).fetchone()
     if player and player["is_banned"]:
         flash("You have been removed from this game.", "error")
@@ -347,6 +375,25 @@ def game_view(game_id):
     payment_methods = json.loads(game["payment_methods"]) if game["payment_methods"] else []
     locked = is_game_locked(game)
 
+    at_limit = False
+    has_pending_request = False
+    max_claims = game["max_claims"]
+    if max_claims > 0:
+        bonus = player["bonus_claims"] if player else 0
+        allowed = max_claims + bonus
+        my_claims = db.execute(
+            "SELECT COUNT(*) as cnt FROM claims WHERE game_id = ? AND player_name = ?",
+            (game_id, pname),
+        ).fetchone()["cnt"]
+        at_limit = my_claims >= allowed
+
+    if at_limit:
+        pending = db.execute(
+            "SELECT id FROM square_requests WHERE game_id = ? AND player_name = ? AND status = 'pending'",
+            (game_id, pname),
+        ).fetchone()
+        has_pending_request = pending is not None
+
     return render_template(
         "game_grid.html",
         game=game,
@@ -355,9 +402,11 @@ def game_view(game_id):
         col_numbers=col_numbers,
         row_numbers=row_numbers,
         claim_count=claim_count,
-        player_name=player_names[game_id],
+        player_name=pname,
         payment_methods=payment_methods,
         locked=locked,
+        at_limit=at_limit,
+        has_pending_request=has_pending_request,
     )
 
 
@@ -431,12 +480,24 @@ def claim_spot(game_id):
         return redirect(url_for("game_view", game_id=game_id))
 
     player = db.execute(
-        "SELECT is_banned FROM players WHERE game_id = ? AND player_name = ?",
+        "SELECT is_banned, bonus_claims FROM players WHERE game_id = ? AND player_name = ?",
         (game_id, player_names[game_id]),
     ).fetchone()
     if player and player["is_banned"]:
         flash("You have been removed from this game.", "error")
         return redirect(url_for("index"))
+
+    max_claims = game["max_claims"]
+    if max_claims > 0:
+        bonus = player["bonus_claims"] if player else 0
+        allowed = max_claims + bonus
+        my_claims = db.execute(
+            "SELECT COUNT(*) as cnt FROM claims WHERE game_id = ? AND player_name = ?",
+            (game_id, player_names[game_id]),
+        ).fetchone()["cnt"]
+        if my_claims >= allowed:
+            flash(f"You've reached your limit of {allowed} squares.", "error")
+            return redirect(url_for("game_view", game_id=game_id))
 
     now = datetime.datetime.now().isoformat()
     try:
@@ -484,6 +545,33 @@ def player_pdf(game_id):
     )
 
 
+@app.route("/game/<game_id>/request-squares", methods=["POST"])
+def request_squares(game_id):
+    player_names = session.get("player_names", {})
+    if game_id not in player_names:
+        return redirect(url_for("join_game", game_id=game_id))
+
+    db = get_db()
+    pname = player_names[game_id]
+
+    existing = db.execute(
+        "SELECT id FROM square_requests WHERE game_id = ? AND player_name = ? AND status = 'pending'",
+        (game_id, pname),
+    ).fetchone()
+    if existing:
+        flash("You already have a pending request.", "error")
+        return redirect(url_for("game_view", game_id=game_id))
+
+    now = datetime.datetime.now().isoformat()
+    db.execute(
+        "INSERT INTO square_requests (game_id, player_name, status, requested_at) VALUES (?, ?, 'pending', ?)",
+        (game_id, pname, now),
+    )
+    db.commit()
+    flash("Request sent to the host for more squares!", "success")
+    return redirect(url_for("game_view", game_id=game_id))
+
+
 # ── Routes: Admin ─────────────────────────────────────────────────
 
 @app.route("/admin")
@@ -512,6 +600,7 @@ def admin_dashboard():
 
 
 @app.route("/admin/<game_id>", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
 def admin_panel(game_id):
     db = get_db()
     game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
@@ -539,6 +628,11 @@ def admin_panel(game_id):
     player_url = request.url_root.rstrip("/") + url_for("game_view", game_id=game_id)
     locked = is_game_locked(game)
 
+    pending_request_count = db.execute(
+        "SELECT COUNT(*) as cnt FROM square_requests WHERE game_id = ? AND status = 'pending'",
+        (game_id,),
+    ).fetchone()["cnt"]
+
     return render_template(
         "admin_panel.html",
         game=game,
@@ -551,6 +645,7 @@ def admin_panel(game_id):
         player_url=player_url,
         has_numbers=has_numbers,
         locked=locked,
+        pending_request_count=pending_request_count,
     )
 
 
@@ -577,12 +672,21 @@ def admin_players(game_id):
     for c in claims:
         player_claims[c["player_name"]] = c["cnt"]
 
+    pending_requests = set()
+    reqs = db.execute(
+        "SELECT player_name FROM square_requests WHERE game_id = ? AND status = 'pending'",
+        (game_id,),
+    ).fetchall()
+    for r in reqs:
+        pending_requests.add(r["player_name"])
+
     return render_template(
         "admin_players.html",
         game=game,
         game_id=game_id,
         players=players,
         player_claims=player_claims,
+        pending_requests=pending_requests,
     )
 
 
@@ -630,6 +734,55 @@ def admin_unban(game_id):
     db.commit()
 
     flash(f"Unbanned '{player_name}'.", "success")
+    return redirect(url_for("admin_players", game_id=game_id))
+
+
+@app.route("/admin/<game_id>/approve-request", methods=["POST"])
+def admin_approve_request(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    player_name = request.form.get("player_name", "").strip()
+    if not player_name:
+        abort(400)
+
+    db = get_db()
+    game = db.execute("SELECT max_claims FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        abort(404)
+
+    db.execute(
+        "UPDATE square_requests SET status = 'approved' WHERE game_id = ? AND player_name = ? AND status = 'pending'",
+        (game_id, player_name),
+    )
+    bonus = game["max_claims"] if game["max_claims"] > 0 else 5
+    db.execute(
+        "UPDATE players SET bonus_claims = bonus_claims + ? WHERE game_id = ? AND player_name = ?",
+        (bonus, game_id, player_name),
+    )
+    db.commit()
+
+    flash(f"Approved {bonus} extra squares for '{player_name}'.", "success")
+    return redirect(url_for("admin_players", game_id=game_id))
+
+
+@app.route("/admin/<game_id>/deny-request", methods=["POST"])
+def admin_deny_request(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    player_name = request.form.get("player_name", "").strip()
+    if not player_name:
+        abort(400)
+
+    db = get_db()
+    db.execute(
+        "UPDATE square_requests SET status = 'denied' WHERE game_id = ? AND player_name = ? AND status = 'pending'",
+        (game_id, player_name),
+    )
+    db.commit()
+
+    flash(f"Denied request from '{player_name}'.", "success")
     return redirect(url_for("admin_players", game_id=game_id))
 
 
@@ -738,6 +891,7 @@ def admin_remove(game_id):
 # ── Routes: Super Admin ───────────────────────────────────────────
 
 @app.route("/superadmin", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
 def superadmin_login():
     if is_superadmin():
         return redirect(url_for("superadmin_dashboard"))

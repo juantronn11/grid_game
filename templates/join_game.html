@@ -10,6 +10,7 @@
     {% else %}
     <p>Enter your name and number to claim a spot on the grid.</p>
     <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="player_name">Name</label>
         <input type="text" name="player_name" id="player_name" placeholder="Your name" required maxlength="20" class="input">
         <label for="phone">Phone Number</label>

@@ -5,6 +5,7 @@
     <h2>Admin: {{ game_name }}</h2>
     <p>Enter the admin password to manage this game.</p>
     <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="password" name="admin_password" placeholder="Admin password" required class="input">
         <button type="submit" class="btn btn-primary">Log In</button>
     </form>

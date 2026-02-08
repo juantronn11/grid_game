@@ -49,6 +49,7 @@
                         <a href="{{ url_for('admin_panel', game_id=g.id) }}" class="btn btn-small btn-primary">Manage</a>
 
                         <form method="post" action="{{ url_for('superadmin_lock', game_id=g.id) }}" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-small {% if g.locked %}btn-unban{% else %}btn-lock{% endif %}">
                                 {% if g.locked %}Unlock{% else %}Lock{% endif %}
                             </button>
@@ -56,6 +57,7 @@
 
                         <form method="post" action="{{ url_for('superadmin_shutdown', game_id=g.id) }}" style="display:inline;"
                               onsubmit="return confirm('Permanently delete game \'{{ g.name }}\'? This cannot be undone.')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-small btn-danger">Delete</button>
                         </form>
                     </div>

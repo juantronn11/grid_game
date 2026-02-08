@@ -4,6 +4,7 @@
 <div class="card center-card">
     <h2>Create New Game</h2>
     <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="name">Game Name</label>
         <input type="text" name="name" id="name" placeholder="e.g. Super Bowl 2026" required class="input">
 
@@ -27,6 +28,9 @@
 
         <label for="lock_at">Game Start Time (auto-locks grid)</label>
         <input type="datetime-local" name="lock_at" id="lock_at" class="input">
+
+        <label for="max_claims">Max Squares Per Player (0 = unlimited)</label>
+        <input type="number" name="max_claims" id="max_claims" placeholder="e.g. 5" min="0" value="0" class="input">
 
         <label for="password">Admin Password</label>
         <input type="password" name="password" id="password" placeholder="Min 4 characters" required minlength="4" class="input">
