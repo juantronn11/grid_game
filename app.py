@@ -273,8 +273,8 @@ def generate_and_store_numbers(game_id):
     if existing_row and existing_col:
         return existing_row, existing_col
 
-    row_numbers = [random.randint(0, 9) for _ in range(10)]
-    col_numbers = [random.randint(0, 9) for _ in range(10)]
+    row_numbers = [secrets.randbelow(10) for _ in range(10)]
+    col_numbers = [secrets.randbelow(10) for _ in range(10)]
     cur.execute(
         "UPDATE games SET row_numbers = %s, col_numbers = %s WHERE id = %s",
         (json.dumps(row_numbers), json.dumps(col_numbers), game_id),
@@ -317,6 +317,7 @@ def browse_games():
 
 
 @app.route("/create", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
 def create_game():
     if HOST_ACCESS_CODE and not session.get("host_verified"):
         if request.method == "POST" and "access_code" in request.form:
@@ -489,6 +490,7 @@ def game_view(game_id):
 
 
 @app.route("/game/<game_id>/join", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"])
 def join_game(game_id):
     db = get_db()
     cur = get_cursor()
@@ -577,6 +579,7 @@ def join_game(game_id):
 
 
 @app.route("/game/<game_id>/claim", methods=["POST"])
+@limiter.limit("20 per minute")
 def claim_spot(game_id):
     player_names = session.get("player_names", {})
     if game_id not in player_names:
@@ -672,6 +675,7 @@ def player_pdf(game_id):
 
 
 @app.route("/game/<game_id>/message-host", methods=["POST"])
+@limiter.limit("3 per minute")
 def message_host(game_id):
     player_names = session.get("player_names", {})
     if game_id not in player_names:
@@ -1216,4 +1220,4 @@ init_db()
 if __name__ == "__main__":
     print("Starting Number Football Grid server...")
     print("Open http://localhost:5000 in your browser")
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=os.environ.get("FLASK_DEBUG", "0") == "1", host="0.0.0.0", port=5000)
