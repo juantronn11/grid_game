@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS messages (
     player_name  TEXT NOT NULL,
     message      TEXT NOT NULL,
     sent_at      TEXT NOT NULL,
+    sender_type  TEXT NOT NULL DEFAULT 'player',
     FOREIGN KEY (game_id) REFERENCES games(id)
 );
 """
@@ -137,6 +138,7 @@ MIGRATIONS = [
         sent_at      TEXT NOT NULL,
         FOREIGN KEY (game_id) REFERENCES games(id)
     )""",
+    "ALTER TABLE messages ADD COLUMN sender_type TEXT NOT NULL DEFAULT 'player'",
 ]
 
 
@@ -522,6 +524,12 @@ def game_view(game_id):
         pending = cur.fetchone()
         has_pending_request = pending is not None
 
+    cur.execute(
+        "SELECT message, sent_at, sender_type FROM messages WHERE game_id = %s AND player_name = %s ORDER BY id ASC",
+        (game_id, pname),
+    )
+    chat_messages = cur.fetchall()
+
     return render_template(
         "game_grid.html",
         game=game,
@@ -535,8 +543,7 @@ def game_view(game_id):
         locked=locked,
         at_limit=at_limit,
         has_pending_request=has_pending_request,
-        has_webhook=bool(game["discord_webhook"]),
-        show_message_form=True,
+        chat_messages=chat_messages,
     )
 
 
@@ -750,7 +757,7 @@ def message_host(game_id):
 
     now = datetime.datetime.now().isoformat()
     cur.execute(
-        "INSERT INTO messages (game_id, player_name, message, sent_at) VALUES (%s, %s, %s, %s)",
+        "INSERT INTO messages (game_id, player_name, message, sent_at, sender_type) VALUES (%s, %s, %s, %s, 'player')",
         (game_id, pname, message, now),
     )
     db.commit()
@@ -759,7 +766,7 @@ def message_host(game_id):
         game["discord_webhook"],
         f"Message from '{pname}' in '{game['name']}':\n> {message}",
     )
-    flash("Message sent to the host!", "success")
+    flash("Message sent!", "success")
     return redirect(url_for("game_view", game_id=game_id))
 
 
@@ -891,10 +898,16 @@ def admin_panel(game_id):
     pending_request_count = cur.fetchone()["cnt"]
 
     cur.execute(
-        "SELECT player_name, message, sent_at FROM messages WHERE game_id = %s ORDER BY id DESC LIMIT 50",
+        "SELECT player_name, message, sent_at, sender_type FROM messages WHERE game_id = %s ORDER BY id ASC",
         (game_id,),
     )
-    messages = cur.fetchall()
+    all_messages = cur.fetchall()
+    chat_threads = {}
+    for msg in all_messages:
+        pname = msg["player_name"]
+        if pname not in chat_threads:
+            chat_threads[pname] = []
+        chat_threads[pname].append(msg)
 
     return render_template(
         "admin_panel.html",
@@ -909,7 +922,7 @@ def admin_panel(game_id):
         has_numbers=has_numbers,
         locked=locked,
         pending_request_count=pending_request_count,
-        messages=messages,
+        chat_threads=chat_threads,
     )
 
 
@@ -1172,6 +1185,42 @@ def admin_remove(game_id):
         cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
     db.commit()
     flash(f"Removed claim at row {row}, col {col}.", "success")
+    return redirect(url_for("admin_panel", game_id=game_id))
+
+
+@app.route("/admin/<game_id>/reply", methods=["POST"])
+@limiter.limit("10 per minute")
+def admin_reply(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    player_name = request.form.get("player_name", "").strip()
+    message = request.form.get("message", "").strip()
+    if not player_name or not message:
+        flash("Reply cannot be empty.", "error")
+        return redirect(url_for("admin_panel", game_id=game_id))
+    if len(message) > 500:
+        flash("Reply must be 500 characters or less.", "error")
+        return redirect(url_for("admin_panel", game_id=game_id))
+
+    db = get_db()
+    cur = get_cursor()
+    now = datetime.datetime.now().isoformat()
+    cur.execute(
+        "INSERT INTO messages (game_id, player_name, message, sent_at, sender_type) VALUES (%s, %s, %s, %s, 'host')",
+        (game_id, player_name, message, now),
+    )
+    db.commit()
+
+    cur.execute("SELECT name, discord_webhook FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
+    if game:
+        send_discord_notification(
+            game["discord_webhook"],
+            f"Host replied to '{player_name}' in '{game['name']}':\n> {message}",
+        )
+
+    flash(f"Reply sent to {player_name}.", "success")
     return redirect(url_for("admin_panel", game_id=game_id))
 
 

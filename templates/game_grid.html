@@ -97,14 +97,23 @@
     </div>
 </div>
 
-{% if show_message_form %}
 <div class="card" style="margin-top:1.5rem;">
-    <h3>Message the Host</h3>
-    <form method="post" action="{{ url_for('message_host', game_id=game_id) }}">
+    <h3>Chat with Host</h3>
+    {% if chat_messages %}
+    <div class="chat-thread">
+        {% for msg in chat_messages %}
+        <div class="chat-bubble chat-bubble-{{ msg['sender_type'] }}">
+            <span class="chat-sender">{{ "Host" if msg["sender_type"] == "host" else player_name }}</span>
+            <p>{{ msg["message"] }}</p>
+            <span class="chat-time">{{ msg["sent_at"][:16].replace("T", " ") }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <form method="post" action="{{ url_for('message_host', game_id=game_id) }}" class="chat-reply-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <textarea name="message" placeholder="Type your message to the host..." maxlength="500" required class="input" rows="2" style="resize:vertical;"></textarea>
-        <button type="submit" class="btn btn-primary btn-small" style="margin-top:0.5rem;">Send Message</button>
+        <input type="text" name="message" placeholder="Type a message..." maxlength="500" required class="input chat-reply-input">
+        <button type="submit" class="btn btn-primary btn-small">Send</button>
     </form>
 </div>
-{% endif %}
 {% endblock %}

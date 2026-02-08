@@ -119,18 +119,34 @@
     </div>
 </div>
 
-{% if messages %}
+{% if chat_threads %}
 <div class="card" style="margin-top:1.5rem;">
-    <h3>Player Messages ({{ messages|length }})</h3>
-    <div class="messages-list">
-        {% for msg in messages %}
-        <div class="message-item">
-            <strong>{{ msg["player_name"] }}</strong>
-            <span class="message-time">{{ msg["sent_at"][:16].replace("T", " ") }}</span>
-            <p class="message-text">{{ msg["message"] }}</p>
+    <h3>Player Chat ({{ chat_threads|length }} conversation{{ "s" if chat_threads|length > 1 else "" }})</h3>
+    {% for player, msgs in chat_threads.items() %}
+    <div class="chat-thread-section">
+        <button type="button" class="chat-thread-toggle" onclick="this.parentElement.classList.toggle('open')">
+            <strong>{{ player }}</strong>
+            <span class="chat-count">{{ msgs|length }} msg{{ "s" if msgs|length > 1 else "" }}</span>
+        </button>
+        <div class="chat-thread-body">
+            <div class="chat-thread">
+                {% for msg in msgs %}
+                <div class="chat-bubble chat-bubble-{{ msg['sender_type'] }}">
+                    <span class="chat-sender">{{ "Host" if msg["sender_type"] == "host" else player }}</span>
+                    <p>{{ msg["message"] }}</p>
+                    <span class="chat-time">{{ msg["sent_at"][:16].replace("T", " ") }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            <form method="post" action="{{ url_for('admin_reply', game_id=game_id) }}" class="chat-reply-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="player_name" value="{{ player }}">
+                <input type="text" name="message" placeholder="Reply to {{ player }}..." maxlength="500" required class="input chat-reply-input">
+                <button type="submit" class="btn btn-primary btn-small">Send</button>
+            </form>
         </div>
-        {% endfor %}
     </div>
+    {% endfor %}
 </div>
 {% endif %}
 {% endblock %}
