@@ -40,6 +40,7 @@ Create a `.env` file in the project root:
 SUPER_ADMIN_PASSWORD=your_secure_password_here
 SECRET_KEY=your_random_secret_key_here
 DATABASE_URL=postgresql://postgres.XXXXX:YOUR_PASSWORD@aws-0-region.pooler.supabase.com:6543/postgres
+SUPERADMIN_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...  (optional)
 ```
 
 Generate a secret key:
@@ -82,12 +83,14 @@ Open `http://localhost:5000` in your browser.
 - Ban/unban players and remove individual claims
 - Approve or deny player requests for extra squares
 - Download grid as PDF
+- Discord webhook notifications (player joins, claims, requests, grid full)
 
 ### For Super Admin
 - Platform-level admin panel at `/superadmin`
 - View all games across the platform
 - Manage any game without needing its password
 - Lock/unlock or delete any game
+- Discord webhook notifications for game events across the platform
 
 ## Security
 

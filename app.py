@@ -3,6 +3,7 @@ import json
 import random
 import secrets
 import datetime
+import urllib.request
 import psycopg2
 import psycopg2.extras
 import psycopg2.errors
@@ -21,6 +22,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
 DATABASE_URL = os.environ.get("DATABASE_URL")
 SUPER_ADMIN_PASSWORD = os.environ.get("SUPER_ADMIN_PASSWORD", "admin1234")
+SUPERADMIN_DISCORD_WEBHOOK = os.environ.get("SUPERADMIN_DISCORD_WEBHOOK", "")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(16))
@@ -46,7 +48,8 @@ CREATE TABLE IF NOT EXISTS games (
     lock_at     TEXT NOT NULL DEFAULT '',
     square_price TEXT NOT NULL DEFAULT '',
     payout_info TEXT NOT NULL DEFAULT '',
-    max_claims  INTEGER NOT NULL DEFAULT 0
+    max_claims  INTEGER NOT NULL DEFAULT 0,
+    discord_webhook TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS claims (
@@ -112,6 +115,7 @@ MIGRATIONS = [
         requested_at TEXT NOT NULL,
         FOREIGN KEY (game_id) REFERENCES games(id)
     )""",
+    "ALTER TABLE games ADD COLUMN discord_webhook TEXT NOT NULL DEFAULT ''",
 ]
 
 
@@ -148,6 +152,22 @@ def init_db():
             db.rollback()
     cur.close()
     db.close()
+
+
+# ── Discord webhook ───────────────────────────────────────────────
+
+def send_discord_notification(webhook_url, message):
+    if not webhook_url:
+        return
+    try:
+        data = json.dumps({"content": message}).encode("utf-8")
+        req = urllib.request.Request(
+            webhook_url, data=data,
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=3)
+    except Exception:
+        pass
 
 
 # ── Grid helpers ──────────────────────────────────────────────────
@@ -308,6 +328,7 @@ def create_game():
     payout_info = request.form.get("payout_info", "").strip()
     lock_at = request.form.get("lock_at", "").strip()
     max_claims = request.form.get("max_claims", 0, type=int)
+    discord_webhook = request.form.get("discord_webhook", "").strip()
 
     game_id = secrets.token_hex(4)
     now = datetime.datetime.now().isoformat()
@@ -315,11 +336,13 @@ def create_game():
     db = get_db()
     cur = get_cursor()
     cur.execute(
-        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods, square_price, payout_info, lock_at, max_claims) "
-        "VALUES (%s, %s, %s, %s, '[]', '[]', %s, %s, %s, %s, %s, %s, %s)",
-        (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods), square_price, payout_info, lock_at, max_claims),
+        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods, square_price, payout_info, lock_at, max_claims, discord_webhook) "
+        "VALUES (%s, %s, %s, %s, '[]', '[]', %s, %s, %s, %s, %s, %s, %s, %s)",
+        (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods), square_price, payout_info, lock_at, max_claims, discord_webhook),
     )
     db.commit()
+
+    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"New game '{name}' created (ID: {game_id})")
 
     admin_games = session.get("admin_games", [])
     admin_games.append(game_id)
@@ -504,6 +527,7 @@ def join_game(game_id):
                 (game_id, name, phone, now),
             )
             db.commit()
+            send_discord_notification(game["discord_webhook"], f"Player '{name}' joined game '{game['name']}'")
         except psycopg2.errors.UniqueViolation:
             db.rollback()
             flash("That name is already taken. Please use a different name.", "error")
@@ -569,6 +593,7 @@ def claim_spot(game_id):
         )
         db.commit()
         flash(f"You claimed row {row}, col {col}!", "success")
+        send_discord_notification(game["discord_webhook"], f"'{player_names[game_id]}' claimed row {row}, col {col} in '{game['name']}'")
     except psycopg2.errors.UniqueViolation:
         db.rollback()
         flash("That spot was already taken! Pick another.", "error")
@@ -578,6 +603,8 @@ def claim_spot(game_id):
         generate_and_store_numbers(game_id)
         cur.execute("UPDATE games SET is_complete = 1 WHERE id = %s", (game_id,))
         db.commit()
+        send_discord_notification(game["discord_webhook"], f"Grid is FULL for '{game['name']}'! All 100 squares claimed.")
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Grid is FULL for '{game['name']}' (ID: {game_id})")
 
     return redirect(url_for("game_view", game_id=game_id))
 
@@ -628,12 +655,17 @@ def request_squares(game_id):
         flash("You already have a pending request.", "error")
         return redirect(url_for("game_view", game_id=game_id))
 
+    cur.execute("SELECT name, discord_webhook FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
+
     now = datetime.datetime.now().isoformat()
     cur.execute(
         "INSERT INTO square_requests (game_id, player_name, status, requested_at) VALUES (%s, %s, 'pending', %s)",
         (game_id, pname, now),
     )
     db.commit()
+    if game:
+        send_discord_notification(game["discord_webhook"], f"'{pname}' requested more squares in '{game['name']}'")
     flash("Request sent to the host for more squares!", "success")
     return redirect(url_for("game_view", game_id=game_id))
 
@@ -774,6 +806,8 @@ def admin_ban(game_id):
 
     db = get_db()
     cur = get_cursor()
+    cur.execute("SELECT name FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     cur.execute(
         "UPDATE players SET is_banned = 1 WHERE game_id = %s AND player_name = %s",
         (game_id, player_name),
@@ -786,6 +820,9 @@ def admin_ban(game_id):
     if count < 100:
         cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
     db.commit()
+
+    if game:
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Player '{player_name}' BANNED from '{game['name']}' (ID: {game_id})")
 
     flash(f"Banned '{player_name}' and removed their claims.", "success")
     return redirect(url_for("admin_players", game_id=game_id))
@@ -872,10 +909,15 @@ def admin_release(game_id):
     generate_and_store_numbers(game_id)
     db = get_db()
     cur = get_cursor()
+    cur.execute("SELECT name FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     cur.execute(
         "UPDATE games SET numbers_released = 1 WHERE id = %s", (game_id,)
     )
     db.commit()
+
+    if game:
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Numbers RELEASED for '{game['name']}' (ID: {game_id})")
 
     flash("Numbers have been released to players!", "success")
     return redirect(url_for("admin_panel", game_id=game_id))
@@ -888,7 +930,7 @@ def admin_lock(game_id):
 
     db = get_db()
     cur = get_cursor()
-    cur.execute("SELECT is_locked FROM games WHERE id = %s", (game_id,))
+    cur.execute("SELECT is_locked, name FROM games WHERE id = %s", (game_id,))
     game = cur.fetchone()
     if not game:
         abort(404)
@@ -904,6 +946,7 @@ def admin_lock(game_id):
         if count < 100:
             cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
         db.commit()
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game['name']}' UNLOCKED (ID: {game_id})")
         flash("Game unlocked. Players can join and claim spots again.", "success")
     else:
         # Lock: fill unclaimed spots with VOID
@@ -917,6 +960,7 @@ def admin_lock(game_id):
                 )
         cur.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = %s", (game_id,))
         db.commit()
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game['name']}' LOCKED (ID: {game_id})")
         flash("Game locked. Unclaimed spots marked as VOID.", "success")
 
     return redirect(url_for("admin_panel", game_id=game_id))
@@ -1033,6 +1077,8 @@ def superadmin_shutdown(game_id):
     cur.execute("DELETE FROM games WHERE id = %s", (game_id,))
     db.commit()
 
+    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game_name}' DELETED (ID: {game_id})")
+
     flash(f"Game '{game_name}' has been shut down and deleted.", "success")
     return redirect(url_for("superadmin_dashboard"))
 
@@ -1044,7 +1090,7 @@ def superadmin_lock(game_id):
 
     db = get_db()
     cur = get_cursor()
-    cur.execute("SELECT is_locked FROM games WHERE id = %s", (game_id,))
+    cur.execute("SELECT is_locked, name FROM games WHERE id = %s", (game_id,))
     game = cur.fetchone()
     if not game:
         abort(404)
@@ -1059,6 +1105,7 @@ def superadmin_lock(game_id):
         if count < 100:
             cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
         db.commit()
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game['name']}' UNLOCKED by Super Admin (ID: {game_id})")
         flash("Game unlocked.", "success")
     else:
         now = datetime.datetime.now().isoformat()
@@ -1071,6 +1118,7 @@ def superadmin_lock(game_id):
                 )
         cur.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = %s", (game_id,))
         db.commit()
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game['name']}' LOCKED by Super Admin (ID: {game_id})")
         flash("Game locked.", "success")
 
     return redirect(url_for("superadmin_dashboard"))
