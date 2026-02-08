@@ -433,13 +433,42 @@ def join_game(game_id):
             flash("Please enter your phone number.", "error")
             return redirect(url_for("join_game", game_id=game_id))
 
+        phone_digits = "".join(c for c in phone if c.isdigit())
+        last4 = phone_digits[-4:] if len(phone_digits) >= 4 else phone_digits
+
         existing = db.execute(
-            "SELECT is_banned FROM players WHERE game_id = ? AND player_name = ?",
+            "SELECT phone, is_banned FROM players WHERE game_id = ? AND player_name = ?",
             (game_id, name),
         ).fetchone()
-        if existing and existing["is_banned"]:
-            flash("You have been removed from this game.", "error")
-            return redirect(url_for("index"))
+
+        if existing:
+            if existing["is_banned"]:
+                flash("You have been removed from this game.", "error")
+                return redirect(url_for("index"))
+
+            existing_digits = "".join(c for c in existing["phone"] if c.isdigit())[-4:]
+            if last4 and existing_digits and last4 == existing_digits:
+                # Same person rejoining (last 4 digits match)
+                player_names = session.get("player_names", {})
+                player_names[game_id] = name
+                session["player_names"] = player_names
+                return redirect(url_for("game_view", game_id=game_id))
+            else:
+                # Different person, same name — append last 4 digits
+                name = f"{name} ({last4})"
+                also_exists = db.execute(
+                    "SELECT is_banned FROM players WHERE game_id = ? AND player_name = ?",
+                    (game_id, name),
+                ).fetchone()
+                if also_exists:
+                    if also_exists["is_banned"]:
+                        flash("You have been removed from this game.", "error")
+                        return redirect(url_for("index"))
+                    # Same modified name already exists — same person rejoining
+                    player_names = session.get("player_names", {})
+                    player_names[game_id] = name
+                    session["player_names"] = player_names
+                    return redirect(url_for("game_view", game_id=game_id))
 
         now = datetime.datetime.now().isoformat()
         try:
@@ -449,7 +478,8 @@ def join_game(game_id):
             )
             db.commit()
         except sqlite3.IntegrityError:
-            pass
+            flash("That name is already taken. Please use a different name.", "error")
+            return redirect(url_for("join_game", game_id=game_id))
 
         player_names = session.get("player_names", {})
         player_names[game_id] = name
