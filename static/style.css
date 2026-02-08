@@ -200,6 +200,31 @@ label {
     margin-bottom: 1rem;
 }
 
+/* ── Banners ──────────────────────────────────── */
+
+.banner {
+    padding: 0.9rem 1.2rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+    font-weight: 600;
+    text-align: center;
+}
+
+.banner-reveal {
+    background: rgba(88, 166, 255, 0.12);
+    border: 1px solid #58a6ff;
+    color: #58a6ff;
+}
+
+/* ── Disabled button ──────────────────────────── */
+
+.btn-disabled {
+    background: #21262d;
+    color: #484f58;
+    cursor: not-allowed;
+}
+
 /* ── Share box ─────────────────────────────────── */
 
 .share-box {

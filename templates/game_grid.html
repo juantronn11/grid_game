@@ -9,23 +9,28 @@
     <div class="game-info">
         <span>Playing as: <strong>{{ player_name }}</strong></span>
         <span class="badge">{{ claim_count }}/100 spots filled</span>
-        {% if game["is_complete"] %}<span class="badge badge-green">GRID FULL!</span>{% endif %}
     </div>
 </div>
 
-<p class="hint">Click any open spot to claim it.</p>
+{% if game["is_complete"] %}
+<div class="banner banner-reveal">
+    The board is full — numbers are in!
+</div>
+{% else %}
+<p class="hint">Click any open spot to claim it. Numbers will be revealed when all 100 spots are filled.</p>
+{% endif %}
 
 <div class="grid-wrapper">
     <table class="game-grid">
         <tr>
             <th class="corner-cell"></th>
-            {% for num in col_numbers %}
-            <th class="number-cell">{{ num }}</th>
+            {% for c in range(10) %}
+            <th class="number-cell">{% if game["is_complete"] %}{{ col_numbers[c] }}{% else %}?{% endif %}</th>
             {% endfor %}
         </tr>
         {% for r in range(1, 11) %}
         <tr>
-            <th class="number-cell">{{ row_numbers[r-1] }}</th>
+            <th class="number-cell">{% if game["is_complete"] %}{{ row_numbers[r-1] }}{% else %}?{% endif %}</th>
             {% for c in range(1, 11) %}
             <td class="{% if grid[r][c] %}claimed{% else %}open{% endif %}">
                 {% if grid[r][c] %}

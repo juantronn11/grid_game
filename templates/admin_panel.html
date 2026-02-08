@@ -5,7 +5,11 @@
     <h2>{{ game["name"] }}</h2>
     <div class="admin-info">
         <span class="badge">{{ claim_count }}/100 spots filled</span>
-        {% if game["is_complete"] %}<span class="badge badge-green">COMPLETE</span>{% endif %}
+        {% if game["is_complete"] %}
+        <span class="badge badge-green">COMPLETE — NUMBERS REVEALED</span>
+        {% else %}
+        <span class="badge">Numbers hidden until full</span>
+        {% endif %}
     </div>
 </div>
 
@@ -17,20 +21,24 @@
 </div>
 
 <div class="admin-actions">
+    {% if game["is_complete"] %}
     <a href="{{ url_for('admin_pdf', game_id=game_id) }}" class="btn btn-primary">Download PDF</a>
+    {% else %}
+    <span class="btn btn-disabled" title="PDF available when grid is full">Download PDF (grid not full)</span>
+    {% endif %}
 </div>
 
 <div class="grid-wrapper">
     <table class="game-grid">
         <tr>
             <th class="corner-cell"></th>
-            {% for num in col_numbers %}
-            <th class="number-cell">{{ num }}</th>
+            {% for c in range(10) %}
+            <th class="number-cell">{% if game["is_complete"] %}{{ col_numbers[c] }}{% else %}?{% endif %}</th>
             {% endfor %}
         </tr>
         {% for r in range(1, 11) %}
         <tr>
-            <th class="number-cell">{{ row_numbers[r-1] }}</th>
+            <th class="number-cell">{% if game["is_complete"] %}{{ row_numbers[r-1] }}{% else %}?{% endif %}</th>
             {% for c in range(1, 11) %}
             <td class="{% if grid[r][c] %}claimed{% else %}open{% endif %}">
                 {% if grid[r][c] %}

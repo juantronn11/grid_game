@@ -76,11 +76,12 @@ def build_grid_from_db(game_id):
     grid = NameGrid()
     col_numbers = json.loads(game["col_numbers"])
     row_numbers = json.loads(game["row_numbers"])
-    for i, num in enumerate(col_numbers):
-        grid.grid[0][i + 1] = str(num)
-    for i, num in enumerate(row_numbers):
-        grid.grid[i + 1][0] = str(num)
-    grid.numbers_generated = True
+    if col_numbers and row_numbers:
+        for i, num in enumerate(col_numbers):
+            grid.grid[0][i + 1] = str(num)
+        for i, num in enumerate(row_numbers):
+            grid.grid[i + 1][0] = str(num)
+        grid.numbers_generated = True
 
     claims = db.execute(
         "SELECT row, col, player_name FROM claims WHERE game_id = ?",
@@ -131,8 +132,8 @@ def create_game():
         return redirect(url_for("create_game"))
 
     game_id = secrets.token_hex(4)
-    row_numbers = [random.randint(0, 9) for _ in range(10)]
-    col_numbers = [random.randint(0, 9) for _ in range(10)]
+    row_numbers = []
+    col_numbers = []
     now = datetime.datetime.now().isoformat()
 
     db = get_db()
@@ -204,6 +205,9 @@ def admin_pdf(game_id):
     grid, game = build_grid_from_db(game_id)
     if not grid:
         abort(404)
+    if not game["is_complete"]:
+        flash("PDF is only available when the grid is full.", "error")
+        return redirect(url_for("admin_panel", game_id=game_id))
 
     pdf_path = export_grid_to_pdf(grid)
     return send_file(
@@ -308,10 +312,15 @@ def claim_spot(game_id):
     except sqlite3.IntegrityError:
         flash("That spot was already taken! Pick another.", "error")
 
-    # Check if grid is full
+    # Check if grid is full — generate numbers on completion
     count = get_claim_count(game_id)
     if count >= 100:
-        db.execute("UPDATE games SET is_complete = 1 WHERE id = ?", (game_id,))
+        row_numbers = [random.randint(0, 9) for _ in range(10)]
+        col_numbers = [random.randint(0, 9) for _ in range(10)]
+        db.execute(
+            "UPDATE games SET is_complete = 1, row_numbers = ?, col_numbers = ? WHERE id = ?",
+            (json.dumps(row_numbers), json.dumps(col_numbers), game_id),
+        )
         db.commit()
 
     return redirect(url_for("game_view", game_id=game_id))
