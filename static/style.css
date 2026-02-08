@@ -1,0 +1,381 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1117;
+    color: #e1e4e8;
+    min-height: 100vh;
+}
+
+header {
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    padding: 1rem 2rem;
+}
+
+.logo {
+    color: #58a6ff;
+    text-decoration: none;
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+}
+
+/* ── Cards ─────────────────────────────────────── */
+
+.card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 2rem;
+}
+
+.center-card {
+    max-width: 420px;
+    margin: 3rem auto;
+    text-align: center;
+}
+
+.center-card h2 {
+    margin-bottom: 0.5rem;
+}
+
+.center-card p {
+    color: #8b949e;
+    margin-bottom: 1.5rem;
+}
+
+/* ── Forms ─────────────────────────────────────── */
+
+label {
+    display: block;
+    text-align: left;
+    margin: 1rem 0 0.3rem;
+    font-size: 0.875rem;
+    color: #8b949e;
+}
+
+.input {
+    width: 100%;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    background: #0d1117;
+    color: #e1e4e8;
+    font-size: 1rem;
+}
+
+.input:focus {
+    outline: none;
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+}
+
+.btn {
+    display: inline-block;
+    padding: 0.6rem 1.4rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    margin-top: 1rem;
+    transition: background 0.15s;
+}
+
+.btn-primary {
+    background: #238636;
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background: #2ea043;
+}
+
+.btn-secondary {
+    background: #30363d;
+    color: #e1e4e8;
+}
+
+.btn-secondary:hover {
+    background: #3d444d;
+}
+
+.btn-small {
+    padding: 0.3rem 0.8rem;
+    font-size: 0.8rem;
+    margin-top: 0;
+    background: #30363d;
+    color: #e1e4e8;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.divider {
+    margin: 1.5rem 0;
+    color: #484f58;
+    font-size: 0.875rem;
+}
+
+/* ── Flash messages ────────────────────────────── */
+
+.flash-messages {
+    margin-bottom: 1rem;
+}
+
+.flash {
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.flash-success {
+    background: rgba(35, 134, 54, 0.2);
+    border: 1px solid #238636;
+    color: #3fb950;
+}
+
+.flash-error {
+    background: rgba(248, 81, 73, 0.15);
+    border: 1px solid #f85149;
+    color: #f85149;
+}
+
+/* ── Badges ────────────────────────────────────── */
+
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.7rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: #30363d;
+    color: #8b949e;
+}
+
+.badge-green {
+    background: rgba(35, 134, 54, 0.25);
+    color: #3fb950;
+}
+
+/* ── Admin / Game headers ──────────────────────── */
+
+.admin-header,
+.game-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.admin-info,
+.game-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.game-info span {
+    font-size: 0.9rem;
+}
+
+.hint {
+    color: #8b949e;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+/* ── Share box ─────────────────────────────────── */
+
+.share-box {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    font-size: 0.9rem;
+}
+
+.share-url {
+    background: #161b22;
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    word-break: break-all;
+    color: #58a6ff;
+}
+
+.share-id {
+    color: #8b949e;
+    font-size: 0.85rem;
+}
+
+.admin-actions {
+    margin-bottom: 1.5rem;
+}
+
+/* ── Grid ──────────────────────────────────────── */
+
+.grid-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -1rem;
+    padding: 0 1rem;
+}
+
+.game-grid {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 660px;
+    table-layout: fixed;
+}
+
+.game-grid th,
+.game-grid td {
+    border: 1px solid #30363d;
+    text-align: center;
+    vertical-align: middle;
+    height: 48px;
+    font-size: 0.85rem;
+    position: relative;
+}
+
+.corner-cell {
+    background: #1c2028;
+    width: 48px;
+    min-width: 48px;
+}
+
+.number-cell {
+    background: #1c2533;
+    color: #58a6ff;
+    font-size: 1.1rem !important;
+    font-weight: 700;
+    width: calc((100% - 48px) / 10);
+}
+
+td.claimed {
+    background: rgba(35, 134, 54, 0.12);
+}
+
+td.claimed .player-name {
+    font-size: 0.8rem;
+    color: #e1e4e8;
+    word-break: break-word;
+}
+
+td.open {
+    background: #0d1117;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+td.open:hover {
+    background: rgba(88, 166, 255, 0.1);
+}
+
+/* Claim button fills the entire cell */
+.claim-btn {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+}
+
+/* ── Admin remove button ───────────────────────── */
+
+.remove-form {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+}
+
+.remove-btn {
+    background: rgba(248, 81, 73, 0.2);
+    color: #f85149;
+    border: none;
+    border-radius: 3px;
+    width: 18px;
+    height: 18px;
+    font-size: 14px;
+    line-height: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+td.claimed:hover .remove-btn {
+    opacity: 1;
+}
+
+/* ── Join form on index ────────────────────────── */
+
+.join-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+
+.join-form .input {
+    flex: 1;
+}
+
+.join-form .btn {
+    margin-top: 0;
+    white-space: nowrap;
+}
+
+/* ── Responsive ────────────────────────────────── */
+
+@media (max-width: 768px) {
+    main {
+        padding: 1rem 0.5rem;
+    }
+
+    .admin-header,
+    .game-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .share-box {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .game-grid th,
+    .game-grid td {
+        height: 40px;
+        font-size: 0.75rem;
+    }
+
+    .number-cell {
+        font-size: 0.95rem !important;
+    }
+}

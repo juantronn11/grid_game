@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card center-card">
+    <h2>Welcome</h2>
+    <p>Create a new game grid or join an existing one.</p>
+
+    <a href="{{ url_for('create_game') }}" class="btn btn-primary">Create New Game</a>
+
+    <div class="divider">or</div>
+
+    <form action="{{ url_for('index') }}" method="get" class="join-form" id="joinForm">
+        <input type="text" id="gameId" placeholder="Enter Game ID" maxlength="8" class="input">
+        <button type="button" class="btn btn-secondary" onclick="joinGame()">Join Game</button>
+    </form>
+</div>
+
+<script>
+function joinGame() {
+    const id = document.getElementById('gameId').value.trim();
+    if (id) window.location.href = '/game/' + id;
+}
+document.getElementById('gameId').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); joinGame(); }
+});
+</script>
+{% endblock %}

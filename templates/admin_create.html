@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Create Game{% endblock %}
+{% block content %}
+<div class="card center-card">
+    <h2>Create New Game</h2>
+    <form method="post">
+        <label for="name">Game Name</label>
+        <input type="text" name="name" id="name" placeholder="e.g. Super Bowl 2026" required class="input">
+
+        <label for="password">Admin Password</label>
+        <input type="password" name="password" id="password" placeholder="Min 4 characters" required minlength="4" class="input">
+
+        <label for="confirm">Confirm Password</label>
+        <input type="password" name="confirm" id="confirm" placeholder="Confirm password" required class="input">
+
+        <button type="submit" class="btn btn-primary">Create Game</button>
+    </form>
+</div>
+{% endblock %}

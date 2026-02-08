@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Join: {{ game_name }}{% endblock %}
+{% block content %}
+<div class="card center-card">
+    <h2>Join: {{ game_name }}</h2>
+    <p>Enter your name to claim a spot on the grid.</p>
+    <form method="post">
+        <input type="text" name="player_name" placeholder="Your name" required maxlength="20" class="input">
+        <button type="submit" class="btn btn-primary">Join Game</button>
+    </form>
+</div>
+{% endblock %}
