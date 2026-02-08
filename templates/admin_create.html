@@ -19,6 +19,15 @@
             <button type="button" class="btn btn-secondary btn-small" onclick="addPaymentRow()">+ Add Payment Method</button>
         </div>
 
+        <label for="square_price">Price Per Square</label>
+        <input type="text" name="square_price" id="square_price" placeholder="e.g. $10 a square" class="input">
+
+        <label for="payout_info">Payout Info</label>
+        <input type="text" name="payout_info" id="payout_info" placeholder="e.g. $50 per quarter" class="input">
+
+        <label for="lock_at">Game Start Time (auto-locks grid)</label>
+        <input type="datetime-local" name="lock_at" id="lock_at" class="input">
+
         <label for="password">Admin Password</label>
         <input type="password" name="password" id="password" placeholder="Min 4 characters" required minlength="4" class="input">
 

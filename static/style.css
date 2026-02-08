@@ -275,6 +275,27 @@ label {
     color: #d29922;
 }
 
+.banner-locked {
+    background: rgba(248, 81, 73, 0.12);
+    border: 1px solid #f85149;
+    color: #f85149;
+}
+
+/* ── Pricing box ─────────────────────────────── */
+
+.pricing-box {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    font-size: 0.9rem;
+}
+
 /* ── Disabled button ──────────────────────────── */
 
 .btn-disabled {
@@ -308,6 +329,15 @@ label {
 
 .btn-unban:hover {
     background: rgba(35, 134, 54, 0.35);
+}
+
+.btn-lock {
+    background: rgba(210, 153, 34, 0.2);
+    color: #d29922;
+}
+
+.btn-lock:hover {
+    background: rgba(210, 153, 34, 0.35);
 }
 
 /* ── Admin nav & tabs ─────────────────────────── */
@@ -566,6 +596,18 @@ td.claimed .player-name {
     font-size: 0.8rem;
     color: #e1e4e8;
     word-break: break-word;
+}
+
+td.void {
+    background: rgba(139, 148, 158, 0.08);
+}
+
+td.void .void-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #484f58;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 td.open {

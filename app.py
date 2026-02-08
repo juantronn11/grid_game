@@ -29,7 +29,11 @@ CREATE TABLE IF NOT EXISTS games (
     numbers_released INTEGER NOT NULL DEFAULT 0,
     team_x      TEXT NOT NULL DEFAULT '',
     team_y      TEXT NOT NULL DEFAULT '',
-    payment_methods TEXT NOT NULL DEFAULT '[]'
+    payment_methods TEXT NOT NULL DEFAULT '[]',
+    is_locked   INTEGER NOT NULL DEFAULT 0,
+    lock_at     TEXT NOT NULL DEFAULT '',
+    square_price TEXT NOT NULL DEFAULT '',
+    payout_info TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS claims (
@@ -71,6 +75,10 @@ MIGRATIONS = [
     "ALTER TABLE games ADD COLUMN team_x TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE games ADD COLUMN team_y TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE games ADD COLUMN payment_methods TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE games ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE games ADD COLUMN lock_at TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE games ADD COLUMN square_price TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE games ADD COLUMN payout_info TEXT NOT NULL DEFAULT ''",
 ]
 
 
@@ -153,6 +161,18 @@ def is_admin(game_id):
     return game_id in session.get("admin_games", [])
 
 
+def is_game_locked(game):
+    if game["is_locked"]:
+        return True
+    lock_at = game["lock_at"]
+    if lock_at:
+        try:
+            return datetime.datetime.now() >= datetime.datetime.fromisoformat(lock_at)
+        except ValueError:
+            return False
+    return False
+
+
 def generate_and_store_numbers(game_id):
     db = get_db()
     game = db.execute("SELECT row_numbers, col_numbers FROM games WHERE id = ?", (game_id,)).fetchone()
@@ -210,14 +230,18 @@ def create_game():
         if label and user:
             payment_methods.append({"label": label, "username": user})
 
+    square_price = request.form.get("square_price", "").strip()
+    payout_info = request.form.get("payout_info", "").strip()
+    lock_at = request.form.get("lock_at", "").strip()
+
     game_id = secrets.token_hex(4)
     now = datetime.datetime.now().isoformat()
 
     db = get_db()
     db.execute(
-        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods) "
-        "VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?)",
-        (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods)),
+        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods, square_price, payout_info, lock_at) "
+        "VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?, ?)",
+        (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods), square_price, payout_info, lock_at),
     )
     db.commit()
 
@@ -257,6 +281,7 @@ def game_view(game_id):
     row_numbers = json.loads(game["row_numbers"])
 
     payment_methods = json.loads(game["payment_methods"]) if game["payment_methods"] else []
+    locked = is_game_locked(game)
 
     return render_template(
         "game_grid.html",
@@ -268,6 +293,7 @@ def game_view(game_id):
         claim_count=claim_count,
         player_name=player_names[game_id],
         payment_methods=payment_methods,
+        locked=locked,
     )
 
 
@@ -277,6 +303,9 @@ def join_game(game_id):
     game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
     if not game:
         abort(404)
+
+    if is_game_locked(game):
+        return render_template("join_game.html", game_id=game_id, game_name=game["name"], locked=True)
 
     if request.method == "POST":
         name = request.form.get("player_name", "").strip()
@@ -314,7 +343,7 @@ def join_game(game_id):
         session["player_names"] = player_names
         return redirect(url_for("game_view", game_id=game_id))
 
-    return render_template("join_game.html", game_id=game_id, game_name=game["name"])
+    return render_template("join_game.html", game_id=game_id, game_name=game["name"], locked=False)
 
 
 @app.route("/game/<game_id>/claim", methods=["POST"])
@@ -323,13 +352,20 @@ def claim_spot(game_id):
     if game_id not in player_names:
         return redirect(url_for("join_game", game_id=game_id))
 
+    db = get_db()
+    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        abort(404)
+    if is_game_locked(game):
+        flash("This game is locked. No more spots can be claimed.", "error")
+        return redirect(url_for("game_view", game_id=game_id))
+
     row = request.form.get("row", type=int)
     col = request.form.get("col", type=int)
     if row is None or col is None or not (1 <= row <= 10 and 1 <= col <= 10):
         flash("Invalid spot.", "error")
         return redirect(url_for("game_view", game_id=game_id))
 
-    db = get_db()
     player = db.execute(
         "SELECT is_banned FROM players WHERE game_id = ? AND player_name = ?",
         (game_id, player_names[game_id]),
@@ -379,6 +415,7 @@ def admin_dashboard():
                 "numbers_released": game["numbers_released"],
                 "claim_count": get_claim_count(gid),
                 "player_count": get_player_count(gid),
+                "locked": is_game_locked(game),
             })
 
     return render_template("admin_dashboard.html", games=games)
@@ -410,6 +447,7 @@ def admin_panel(game_id):
     has_numbers = bool(col_numbers and row_numbers)
 
     player_url = request.url_root.rstrip("/") + url_for("game_view", game_id=game_id)
+    locked = is_game_locked(game)
 
     return render_template(
         "admin_panel.html",
@@ -422,6 +460,7 @@ def admin_panel(game_id):
         player_count=player_count,
         player_url=player_url,
         has_numbers=has_numbers,
+        locked=locked,
     )
 
 
@@ -517,6 +556,47 @@ def admin_release(game_id):
     db.commit()
 
     flash("Numbers have been released to players!", "success")
+    return redirect(url_for("admin_panel", game_id=game_id))
+
+
+@app.route("/admin/<game_id>/lock", methods=["POST"])
+def admin_lock(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    db = get_db()
+    game = db.execute("SELECT is_locked FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        abort(404)
+
+    if game["is_locked"]:
+        # Unlock: remove VOID claims and reopen
+        db.execute(
+            "DELETE FROM claims WHERE game_id = ? AND player_name = 'VOID'",
+            (game_id,),
+        )
+        db.execute("UPDATE games SET is_locked = 0 WHERE id = ?", (game_id,))
+        count = get_claim_count(game_id)
+        if count < 100:
+            db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
+        db.commit()
+        flash("Game unlocked. Players can join and claim spots again.", "success")
+    else:
+        # Lock: fill unclaimed spots with VOID
+        now = datetime.datetime.now().isoformat()
+        for r in range(1, 11):
+            for c in range(1, 11):
+                try:
+                    db.execute(
+                        "INSERT INTO claims (game_id, row, col, player_name, claimed_at) VALUES (?, ?, ?, 'VOID', ?)",
+                        (game_id, r, c, now),
+                    )
+                except sqlite3.IntegrityError:
+                    pass  # already claimed by a real player
+        db.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = ?", (game_id,))
+        db.commit()
+        flash("Game locked. Unclaimed spots marked as VOID.", "success")
+
     return redirect(url_for("admin_panel", game_id=game_id))
 
 

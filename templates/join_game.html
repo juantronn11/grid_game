@@ -3,6 +3,11 @@
 {% block content %}
 <div class="card center-card">
     <h2>Join: {{ game_name }}</h2>
+    {% if locked %}
+    <div class="banner banner-locked" style="margin-top:1rem;">
+        This game is closed to new players.
+    </div>
+    {% else %}
     <p>Enter your name and number to claim a spot on the grid.</p>
     <form method="post">
         <label for="player_name">Name</label>
@@ -11,5 +16,6 @@
         <input type="tel" name="phone" id="phone" placeholder="(555) 123-4567" required class="input">
         <button type="submit" class="btn btn-primary">Join Game</button>
     </form>
+    {% endif %}
 </div>
 {% endblock %}

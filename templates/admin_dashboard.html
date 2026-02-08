@@ -23,6 +23,9 @@
             <span>ID: {{ g.id }}</span>
         </div>
         <div class="game-card-status">
+            {% if g.locked %}
+                <span class="badge badge-red">Locked</span>
+            {% endif %}
             {% if g.numbers_released %}
                 <span class="badge badge-green">Numbers Released</span>
             {% elif g.is_complete %}

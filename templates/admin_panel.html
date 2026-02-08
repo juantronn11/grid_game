@@ -16,6 +16,9 @@
     <div class="admin-info">
         <span class="badge">{{ claim_count }}/100 spots</span>
         <span class="badge">{{ player_count }} players</span>
+        {% if locked %}
+        <span class="badge badge-red">Locked</span>
+        {% endif %}
         {% if game["numbers_released"] %}
         <span class="badge badge-green">Numbers Released</span>
         {% elif game["is_complete"] %}
@@ -35,7 +38,27 @@
     <span class="share-id">Game ID: <strong>{{ game_id }}</strong></span>
 </div>
 
+{% if game["square_price"] or game["payout_info"] %}
+<div class="pricing-box">
+    {% if game["square_price"] %}<span><strong>Price:</strong> {{ game["square_price"] }}</span>{% endif %}
+    {% if game["payout_info"] %}<span><strong>Payout:</strong> {{ game["payout_info"] }}</span>{% endif %}
+</div>
+{% endif %}
+
+{% if game["lock_at"] %}
+<div class="pricing-box">
+    <span><strong>Auto-lock at:</strong> {{ game["lock_at"][:16].replace("T", " ") }}</span>
+</div>
+{% endif %}
+
 <div class="admin-actions">
+    <form method="post" action="{{ url_for('admin_lock', game_id=game_id) }}" style="display:inline;"
+          onsubmit="return confirm('{{ "Unlock game and remove VOID squares?" if locked else "Lock game and mark unclaimed squares as VOID?" }}')">
+        <button type="submit" class="btn {% if locked %}btn-unban{% else %}btn-lock{% endif %}">
+            {% if locked %}Unlock Game{% else %}Lock Game{% endif %}
+        </button>
+    </form>
+
     {% if not game["numbers_released"] %}
     <form method="post" action="{{ url_for('admin_release', game_id=game_id) }}" style="display:inline;"
           onsubmit="return confirm('Release numbers to all players now?')">
@@ -65,8 +88,10 @@
             <tr>
                 <th class="number-cell">{% if has_numbers %}{{ row_numbers[r-1] }}{% else %}?{% endif %}</th>
                 {% for c in range(1, 11) %}
-                <td class="{% if grid[r][c] %}claimed{% else %}open{% endif %}">
-                    {% if grid[r][c] %}
+                <td class="{% if grid[r][c] == 'VOID' %}void{% elif grid[r][c] %}claimed{% else %}open{% endif %}">
+                    {% if grid[r][c] == 'VOID' %}
+                        <span class="void-label">VOID</span>
+                    {% elif grid[r][c] %}
                         <span class="player-name">{{ grid[r][c] }}</span>
                         <form method="post" action="{{ url_for('admin_remove', game_id=game_id) }}" class="remove-form">
                             <input type="hidden" name="row" value="{{ r }}">
