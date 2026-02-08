@@ -180,8 +180,16 @@ def init_db():
 
 # ── Discord webhook ───────────────────────────────────────────────
 
+DISCORD_WEBHOOK_PREFIXES = (
+    "https://discord.com/api/webhooks/",
+    "https://discordapp.com/api/webhooks/",
+)
+
+
 def send_discord_notification(webhook_url, message):
     if not webhook_url:
+        return
+    if not webhook_url.startswith(DISCORD_WEBHOOK_PREFIXES):
         return
     try:
         data = json.dumps({"content": message}).encode("utf-8")
@@ -375,6 +383,9 @@ def create_game():
     lock_at = request.form.get("lock_at", "").strip()
     max_claims = request.form.get("max_claims", 0, type=int)
     discord_webhook = request.form.get("discord_webhook", "").strip()
+    if discord_webhook and not discord_webhook.startswith(DISCORD_WEBHOOK_PREFIXES):
+        flash("Discord webhook must be a valid Discord webhook URL.", "error")
+        return redirect(url_for("create_game"))
 
     custom_code = request.form.get("custom_code", "").strip().upper()
     if custom_code:
