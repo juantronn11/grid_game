@@ -2,8 +2,10 @@ import os
 import json
 import random
 import secrets
-import sqlite3
 import datetime
+import psycopg2
+import psycopg2.extras
+import psycopg2.errors
 from dotenv import load_dotenv
 from flask import (
     Flask, render_template, request, redirect,
@@ -17,11 +19,13 @@ from game import NameGrid, export_grid_to_pdf
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
-DATABASE = os.path.join(SCRIPT_DIR, "game.db")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 SUPER_ADMIN_PASSWORD = os.environ.get("SUPER_ADMIN_PASSWORD", "admin1234")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(16))
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 csrf = CSRFProtect(app)
 limiter = Limiter(get_remote_address, app=app, default_limits=[])
 
@@ -46,18 +50,18 @@ CREATE TABLE IF NOT EXISTS games (
 );
 
 CREATE TABLE IF NOT EXISTS claims (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     game_id     TEXT NOT NULL,
-    row         INTEGER NOT NULL,
+    "row"       INTEGER NOT NULL,
     col         INTEGER NOT NULL,
     player_name TEXT NOT NULL,
     claimed_at  TEXT NOT NULL,
     FOREIGN KEY (game_id) REFERENCES games(id),
-    UNIQUE(game_id, row, col)
+    UNIQUE(game_id, "row", col)
 );
 
 CREATE TABLE IF NOT EXISTS players (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     game_id     TEXT NOT NULL,
     player_name TEXT NOT NULL,
     phone       TEXT NOT NULL DEFAULT '',
@@ -69,7 +73,7 @@ CREATE TABLE IF NOT EXISTS players (
 );
 
 CREATE TABLE IF NOT EXISTS square_requests (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    id           SERIAL PRIMARY KEY,
     game_id      TEXT NOT NULL,
     player_name  TEXT NOT NULL,
     status       TEXT NOT NULL DEFAULT 'pending',
@@ -81,7 +85,7 @@ CREATE TABLE IF NOT EXISTS square_requests (
 MIGRATIONS = [
     "ALTER TABLE games ADD COLUMN numbers_released INTEGER NOT NULL DEFAULT 0",
     """CREATE TABLE IF NOT EXISTS players (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        id          SERIAL PRIMARY KEY,
         game_id     TEXT NOT NULL,
         player_name TEXT NOT NULL,
         phone       TEXT NOT NULL DEFAULT '',
@@ -101,7 +105,7 @@ MIGRATIONS = [
     "ALTER TABLE games ADD COLUMN max_claims INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE players ADD COLUMN bonus_claims INTEGER NOT NULL DEFAULT 0",
     """CREATE TABLE IF NOT EXISTS square_requests (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        id           SERIAL PRIMARY KEY,
         game_id      TEXT NOT NULL,
         player_name  TEXT NOT NULL,
         status       TEXT NOT NULL DEFAULT 'pending',
@@ -115,11 +119,13 @@ MIGRATIONS = [
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DATABASE)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA journal_mode=WAL")
-        g.db.execute("PRAGMA foreign_keys=ON")
+        g.db = psycopg2.connect(DATABASE_URL)
+        g.db.autocommit = False
     return g.db
+
+
+def get_cursor():
+    return get_db().cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 @app.teardown_appcontext
@@ -130,22 +136,26 @@ def close_db(exception):
 
 
 def init_db():
-    db = sqlite3.connect(DATABASE)
-    db.executescript(SCHEMA_SQL)
+    db = psycopg2.connect(DATABASE_URL)
+    cur = db.cursor()
+    cur.execute(SCHEMA_SQL)
+    db.commit()
     for migration in MIGRATIONS:
         try:
-            db.execute(migration)
+            cur.execute(migration)
             db.commit()
-        except sqlite3.OperationalError:
-            pass
+        except Exception:
+            db.rollback()
+    cur.close()
     db.close()
 
 
 # ── Grid helpers ──────────────────────────────────────────────────
 
 def build_grid_from_db(game_id):
-    db = get_db()
-    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    cur = get_cursor()
+    cur.execute("SELECT * FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     if not game:
         return None, None
 
@@ -159,10 +169,11 @@ def build_grid_from_db(game_id):
             grid.grid[i + 1][0] = str(num)
         grid.numbers_generated = True
 
-    claims = db.execute(
-        "SELECT row, col, player_name FROM claims WHERE game_id = ?",
+    cur.execute(
+        'SELECT "row", col, player_name FROM claims WHERE game_id = %s',
         (game_id,),
-    ).fetchall()
+    )
+    claims = cur.fetchall()
     for claim in claims:
         grid.grid[claim["row"]][claim["col"]] = claim["player_name"]
 
@@ -170,19 +181,21 @@ def build_grid_from_db(game_id):
 
 
 def get_claim_count(game_id):
-    db = get_db()
-    row = db.execute(
-        "SELECT COUNT(*) as cnt FROM claims WHERE game_id = ?", (game_id,)
-    ).fetchone()
+    cur = get_cursor()
+    cur.execute(
+        "SELECT COUNT(*) as cnt FROM claims WHERE game_id = %s", (game_id,)
+    )
+    row = cur.fetchone()
     return row["cnt"]
 
 
 def get_player_count(game_id):
-    db = get_db()
-    row = db.execute(
-        "SELECT COUNT(*) as cnt FROM players WHERE game_id = ? AND is_banned = 0",
+    cur = get_cursor()
+    cur.execute(
+        "SELECT COUNT(*) as cnt FROM players WHERE game_id = %s AND is_banned = 0",
         (game_id,),
-    ).fetchone()
+    )
+    row = cur.fetchone()
     return row["cnt"]
 
 
@@ -208,7 +221,9 @@ def is_game_locked(game):
 
 def generate_and_store_numbers(game_id):
     db = get_db()
-    game = db.execute("SELECT row_numbers, col_numbers FROM games WHERE id = ?", (game_id,)).fetchone()
+    cur = get_cursor()
+    cur.execute("SELECT row_numbers, col_numbers FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     existing_row = json.loads(game["row_numbers"])
     existing_col = json.loads(game["col_numbers"])
     if existing_row and existing_col:
@@ -216,8 +231,8 @@ def generate_and_store_numbers(game_id):
 
     row_numbers = [random.randint(0, 9) for _ in range(10)]
     col_numbers = [random.randint(0, 9) for _ in range(10)]
-    db.execute(
-        "UPDATE games SET row_numbers = ?, col_numbers = ? WHERE id = ?",
+    cur.execute(
+        "UPDATE games SET row_numbers = %s, col_numbers = %s WHERE id = %s",
         (json.dumps(row_numbers), json.dumps(col_numbers), game_id),
     )
     db.commit()
@@ -233,10 +248,9 @@ def index():
 
 @app.route("/games")
 def browse_games():
-    db = get_db()
-    all_games = db.execute(
-        "SELECT * FROM games ORDER BY created_at DESC"
-    ).fetchall()
+    cur = get_cursor()
+    cur.execute("SELECT * FROM games ORDER BY created_at DESC")
+    all_games = cur.fetchall()
 
     player_names = session.get("player_names", {})
     games = []
@@ -299,9 +313,10 @@ def create_game():
     now = datetime.datetime.now().isoformat()
 
     db = get_db()
-    db.execute(
+    cur = get_cursor()
+    cur.execute(
         "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods, square_price, payout_info, lock_at, max_claims) "
-        "VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, '[]', '[]', %s, %s, %s, %s, %s, %s, %s)",
         (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods), square_price, payout_info, lock_at, max_claims),
     )
     db.commit()
@@ -322,15 +337,17 @@ def my_games():
     if not player_names:
         return render_template("my_games.html", games=[])
 
-    db = get_db()
+    cur = get_cursor()
     games = []
     for gid, pname in player_names.items():
-        game = db.execute("SELECT * FROM games WHERE id = ?", (gid,)).fetchone()
+        cur.execute("SELECT * FROM games WHERE id = %s", (gid,))
+        game = cur.fetchone()
         if game:
-            player = db.execute(
-                "SELECT is_banned FROM players WHERE game_id = ? AND player_name = ?",
+            cur.execute(
+                "SELECT is_banned FROM players WHERE game_id = %s AND player_name = %s",
                 (gid, pname),
-            ).fetchone()
+            )
+            player = cur.fetchone()
             if player and player["is_banned"]:
                 continue
             claim_count = get_claim_count(gid)
@@ -352,12 +369,13 @@ def game_view(game_id):
     if game_id not in player_names:
         return redirect(url_for("join_game", game_id=game_id))
 
-    db = get_db()
+    cur = get_cursor()
     pname = player_names[game_id]
-    player = db.execute(
-        "SELECT is_banned, bonus_claims FROM players WHERE game_id = ? AND player_name = ?",
+    cur.execute(
+        "SELECT is_banned, bonus_claims FROM players WHERE game_id = %s AND player_name = %s",
         (game_id, pname),
-    ).fetchone()
+    )
+    player = cur.fetchone()
     if player and player["is_banned"]:
         flash("You have been removed from this game.", "error")
         del player_names[game_id]
@@ -381,17 +399,19 @@ def game_view(game_id):
     if max_claims > 0:
         bonus = player["bonus_claims"] if player else 0
         allowed = max_claims + bonus
-        my_claims = db.execute(
-            "SELECT COUNT(*) as cnt FROM claims WHERE game_id = ? AND player_name = ?",
+        cur.execute(
+            "SELECT COUNT(*) as cnt FROM claims WHERE game_id = %s AND player_name = %s",
             (game_id, pname),
-        ).fetchone()["cnt"]
+        )
+        my_claims = cur.fetchone()["cnt"]
         at_limit = my_claims >= allowed
 
     if at_limit:
-        pending = db.execute(
-            "SELECT id FROM square_requests WHERE game_id = ? AND player_name = ? AND status = 'pending'",
+        cur.execute(
+            "SELECT id FROM square_requests WHERE game_id = %s AND player_name = %s AND status = 'pending'",
             (game_id, pname),
-        ).fetchone()
+        )
+        pending = cur.fetchone()
         has_pending_request = pending is not None
 
     return render_template(
@@ -413,7 +433,9 @@ def game_view(game_id):
 @app.route("/game/<game_id>/join", methods=["GET", "POST"])
 def join_game(game_id):
     db = get_db()
-    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    cur = get_cursor()
+    cur.execute("SELECT * FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     if not game:
         abort(404)
 
@@ -426,6 +448,9 @@ def join_game(game_id):
         if not name:
             flash("Please enter your name.", "error")
             return redirect(url_for("join_game", game_id=game_id))
+        if name.upper() == "VOID":
+            flash("That name is not allowed.", "error")
+            return redirect(url_for("join_game", game_id=game_id))
         if len(name) > 20:
             flash("Name must be 20 characters or less.", "error")
             return redirect(url_for("join_game", game_id=game_id))
@@ -436,10 +461,11 @@ def join_game(game_id):
         phone_digits = "".join(c for c in phone if c.isdigit())
         last4 = phone_digits[-4:] if len(phone_digits) >= 4 else phone_digits
 
-        existing = db.execute(
-            "SELECT phone, is_banned FROM players WHERE game_id = ? AND player_name = ?",
+        cur.execute(
+            "SELECT phone, is_banned FROM players WHERE game_id = %s AND player_name = %s",
             (game_id, name),
-        ).fetchone()
+        )
+        existing = cur.fetchone()
 
         if existing:
             if existing["is_banned"]:
@@ -456,10 +482,11 @@ def join_game(game_id):
             else:
                 # Different person, same name — append last 4 digits
                 name = f"{name} ({last4})"
-                also_exists = db.execute(
-                    "SELECT is_banned FROM players WHERE game_id = ? AND player_name = ?",
+                cur.execute(
+                    "SELECT is_banned FROM players WHERE game_id = %s AND player_name = %s",
                     (game_id, name),
-                ).fetchone()
+                )
+                also_exists = cur.fetchone()
                 if also_exists:
                     if also_exists["is_banned"]:
                         flash("You have been removed from this game.", "error")
@@ -472,12 +499,13 @@ def join_game(game_id):
 
         now = datetime.datetime.now().isoformat()
         try:
-            db.execute(
-                "INSERT INTO players (game_id, player_name, phone, joined_at) VALUES (?, ?, ?, ?)",
+            cur.execute(
+                "INSERT INTO players (game_id, player_name, phone, joined_at) VALUES (%s, %s, %s, %s)",
                 (game_id, name, phone, now),
             )
             db.commit()
-        except sqlite3.IntegrityError:
+        except psycopg2.errors.UniqueViolation:
+            db.rollback()
             flash("That name is already taken. Please use a different name.", "error")
             return redirect(url_for("join_game", game_id=game_id))
 
@@ -496,7 +524,9 @@ def claim_spot(game_id):
         return redirect(url_for("join_game", game_id=game_id))
 
     db = get_db()
-    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    cur = get_cursor()
+    cur.execute("SELECT * FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     if not game:
         abort(404)
     if is_game_locked(game):
@@ -509,10 +539,11 @@ def claim_spot(game_id):
         flash("Invalid spot.", "error")
         return redirect(url_for("game_view", game_id=game_id))
 
-    player = db.execute(
-        "SELECT is_banned, bonus_claims FROM players WHERE game_id = ? AND player_name = ?",
+    cur.execute(
+        "SELECT is_banned, bonus_claims FROM players WHERE game_id = %s AND player_name = %s",
         (game_id, player_names[game_id]),
-    ).fetchone()
+    )
+    player = cur.fetchone()
     if player and player["is_banned"]:
         flash("You have been removed from this game.", "error")
         return redirect(url_for("index"))
@@ -521,29 +552,31 @@ def claim_spot(game_id):
     if max_claims > 0:
         bonus = player["bonus_claims"] if player else 0
         allowed = max_claims + bonus
-        my_claims = db.execute(
-            "SELECT COUNT(*) as cnt FROM claims WHERE game_id = ? AND player_name = ?",
+        cur.execute(
+            "SELECT COUNT(*) as cnt FROM claims WHERE game_id = %s AND player_name = %s",
             (game_id, player_names[game_id]),
-        ).fetchone()["cnt"]
+        )
+        my_claims = cur.fetchone()["cnt"]
         if my_claims >= allowed:
             flash(f"You've reached your limit of {allowed} squares.", "error")
             return redirect(url_for("game_view", game_id=game_id))
 
     now = datetime.datetime.now().isoformat()
     try:
-        db.execute(
-            "INSERT INTO claims (game_id, row, col, player_name, claimed_at) VALUES (?, ?, ?, ?, ?)",
+        cur.execute(
+            'INSERT INTO claims (game_id, "row", col, player_name, claimed_at) VALUES (%s, %s, %s, %s, %s)',
             (game_id, row, col, player_names[game_id], now),
         )
         db.commit()
         flash(f"You claimed row {row}, col {col}!", "success")
-    except sqlite3.IntegrityError:
+    except psycopg2.errors.UniqueViolation:
+        db.rollback()
         flash("That spot was already taken! Pick another.", "error")
 
     count = get_claim_count(game_id)
     if count >= 100:
         generate_and_store_numbers(game_id)
-        db.execute("UPDATE games SET is_complete = 1 WHERE id = ?", (game_id,))
+        cur.execute("UPDATE games SET is_complete = 1 WHERE id = %s", (game_id,))
         db.commit()
 
     return redirect(url_for("game_view", game_id=game_id))
@@ -555,8 +588,9 @@ def player_pdf(game_id):
     if game_id not in player_names:
         abort(403)
 
-    db = get_db()
-    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    cur = get_cursor()
+    cur.execute("SELECT * FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     if not game:
         abort(404)
     if not game["numbers_released"]:
@@ -582,19 +616,21 @@ def request_squares(game_id):
         return redirect(url_for("join_game", game_id=game_id))
 
     db = get_db()
+    cur = get_cursor()
     pname = player_names[game_id]
 
-    existing = db.execute(
-        "SELECT id FROM square_requests WHERE game_id = ? AND player_name = ? AND status = 'pending'",
+    cur.execute(
+        "SELECT id FROM square_requests WHERE game_id = %s AND player_name = %s AND status = 'pending'",
         (game_id, pname),
-    ).fetchone()
+    )
+    existing = cur.fetchone()
     if existing:
         flash("You already have a pending request.", "error")
         return redirect(url_for("game_view", game_id=game_id))
 
     now = datetime.datetime.now().isoformat()
-    db.execute(
-        "INSERT INTO square_requests (game_id, player_name, status, requested_at) VALUES (?, ?, 'pending', ?)",
+    cur.execute(
+        "INSERT INTO square_requests (game_id, player_name, status, requested_at) VALUES (%s, %s, 'pending', %s)",
         (game_id, pname, now),
     )
     db.commit()
@@ -610,10 +646,11 @@ def admin_dashboard():
     if not admin_games:
         return render_template("admin_dashboard.html", games=[])
 
-    db = get_db()
+    cur = get_cursor()
     games = []
     for gid in admin_games:
-        game = db.execute("SELECT * FROM games WHERE id = ?", (gid,)).fetchone()
+        cur.execute("SELECT * FROM games WHERE id = %s", (gid,))
+        game = cur.fetchone()
         if game:
             games.append({
                 "id": game["id"],
@@ -632,8 +669,9 @@ def admin_dashboard():
 @app.route("/admin/<game_id>", methods=["GET", "POST"])
 @limiter.limit("5 per minute", methods=["POST"])
 def admin_panel(game_id):
-    db = get_db()
-    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    cur = get_cursor()
+    cur.execute("SELECT * FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     if not game:
         abort(404)
 
@@ -658,10 +696,11 @@ def admin_panel(game_id):
     player_url = request.url_root.rstrip("/") + url_for("game_view", game_id=game_id)
     locked = is_game_locked(game)
 
-    pending_request_count = db.execute(
-        "SELECT COUNT(*) as cnt FROM square_requests WHERE game_id = ? AND status = 'pending'",
+    cur.execute(
+        "SELECT COUNT(*) as cnt FROM square_requests WHERE game_id = %s AND status = 'pending'",
         (game_id,),
-    ).fetchone()["cnt"]
+    )
+    pending_request_count = cur.fetchone()["cnt"]
 
     return render_template(
         "admin_panel.html",
@@ -684,29 +723,33 @@ def admin_players(game_id):
     if not is_admin(game_id):
         abort(403)
 
-    db = get_db()
-    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    cur = get_cursor()
+    cur.execute("SELECT * FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     if not game:
         abort(404)
 
-    players = db.execute(
-        "SELECT * FROM players WHERE game_id = ? ORDER BY joined_at DESC",
+    cur.execute(
+        "SELECT * FROM players WHERE game_id = %s ORDER BY joined_at DESC",
         (game_id,),
-    ).fetchall()
+    )
+    players = cur.fetchall()
 
     player_claims = {}
-    claims = db.execute(
-        "SELECT player_name, COUNT(*) as cnt FROM claims WHERE game_id = ? GROUP BY player_name",
+    cur.execute(
+        "SELECT player_name, COUNT(*) as cnt FROM claims WHERE game_id = %s GROUP BY player_name",
         (game_id,),
-    ).fetchall()
+    )
+    claims = cur.fetchall()
     for c in claims:
         player_claims[c["player_name"]] = c["cnt"]
 
     pending_requests = set()
-    reqs = db.execute(
-        "SELECT player_name FROM square_requests WHERE game_id = ? AND status = 'pending'",
+    cur.execute(
+        "SELECT player_name FROM square_requests WHERE game_id = %s AND status = 'pending'",
         (game_id,),
-    ).fetchall()
+    )
+    reqs = cur.fetchall()
     for r in reqs:
         pending_requests.add(r["player_name"])
 
@@ -730,17 +773,18 @@ def admin_ban(game_id):
         abort(400)
 
     db = get_db()
-    db.execute(
-        "UPDATE players SET is_banned = 1 WHERE game_id = ? AND player_name = ?",
+    cur = get_cursor()
+    cur.execute(
+        "UPDATE players SET is_banned = 1 WHERE game_id = %s AND player_name = %s",
         (game_id, player_name),
     )
-    db.execute(
-        "DELETE FROM claims WHERE game_id = ? AND player_name = ?",
+    cur.execute(
+        "DELETE FROM claims WHERE game_id = %s AND player_name = %s",
         (game_id, player_name),
     )
     count = get_claim_count(game_id)
     if count < 100:
-        db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
+        cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
     db.commit()
 
     flash(f"Banned '{player_name}' and removed their claims.", "success")
@@ -757,8 +801,9 @@ def admin_unban(game_id):
         abort(400)
 
     db = get_db()
-    db.execute(
-        "UPDATE players SET is_banned = 0 WHERE game_id = ? AND player_name = ?",
+    cur = get_cursor()
+    cur.execute(
+        "UPDATE players SET is_banned = 0 WHERE game_id = %s AND player_name = %s",
         (game_id, player_name),
     )
     db.commit()
@@ -777,17 +822,19 @@ def admin_approve_request(game_id):
         abort(400)
 
     db = get_db()
-    game = db.execute("SELECT max_claims FROM games WHERE id = ?", (game_id,)).fetchone()
+    cur = get_cursor()
+    cur.execute("SELECT max_claims FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     if not game:
         abort(404)
 
-    db.execute(
-        "UPDATE square_requests SET status = 'approved' WHERE game_id = ? AND player_name = ? AND status = 'pending'",
+    cur.execute(
+        "UPDATE square_requests SET status = 'approved' WHERE game_id = %s AND player_name = %s AND status = 'pending'",
         (game_id, player_name),
     )
     bonus = game["max_claims"] if game["max_claims"] > 0 else 5
-    db.execute(
-        "UPDATE players SET bonus_claims = bonus_claims + ? WHERE game_id = ? AND player_name = ?",
+    cur.execute(
+        "UPDATE players SET bonus_claims = bonus_claims + %s WHERE game_id = %s AND player_name = %s",
         (bonus, game_id, player_name),
     )
     db.commit()
@@ -806,8 +853,9 @@ def admin_deny_request(game_id):
         abort(400)
 
     db = get_db()
-    db.execute(
-        "UPDATE square_requests SET status = 'denied' WHERE game_id = ? AND player_name = ? AND status = 'pending'",
+    cur = get_cursor()
+    cur.execute(
+        "UPDATE square_requests SET status = 'denied' WHERE game_id = %s AND player_name = %s AND status = 'pending'",
         (game_id, player_name),
     )
     db.commit()
@@ -823,8 +871,9 @@ def admin_release(game_id):
 
     generate_and_store_numbers(game_id)
     db = get_db()
-    db.execute(
-        "UPDATE games SET numbers_released = 1 WHERE id = ?", (game_id,)
+    cur = get_cursor()
+    cur.execute(
+        "UPDATE games SET numbers_released = 1 WHERE id = %s", (game_id,)
     )
     db.commit()
 
@@ -838,20 +887,22 @@ def admin_lock(game_id):
         abort(403)
 
     db = get_db()
-    game = db.execute("SELECT is_locked FROM games WHERE id = ?", (game_id,)).fetchone()
+    cur = get_cursor()
+    cur.execute("SELECT is_locked FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     if not game:
         abort(404)
 
     if game["is_locked"]:
         # Unlock: remove VOID claims and reopen
-        db.execute(
-            "DELETE FROM claims WHERE game_id = ? AND player_name = 'VOID'",
+        cur.execute(
+            "DELETE FROM claims WHERE game_id = %s AND player_name = 'VOID'",
             (game_id,),
         )
-        db.execute("UPDATE games SET is_locked = 0 WHERE id = ?", (game_id,))
+        cur.execute("UPDATE games SET is_locked = 0 WHERE id = %s", (game_id,))
         count = get_claim_count(game_id)
         if count < 100:
-            db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
+            cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
         db.commit()
         flash("Game unlocked. Players can join and claim spots again.", "success")
     else:
@@ -859,14 +910,12 @@ def admin_lock(game_id):
         now = datetime.datetime.now().isoformat()
         for r in range(1, 11):
             for c in range(1, 11):
-                try:
-                    db.execute(
-                        "INSERT INTO claims (game_id, row, col, player_name, claimed_at) VALUES (?, ?, ?, 'VOID', ?)",
-                        (game_id, r, c, now),
-                    )
-                except sqlite3.IntegrityError:
-                    pass  # already claimed by a real player
-        db.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = ?", (game_id,))
+                cur.execute(
+                    'INSERT INTO claims (game_id, "row", col, player_name, claimed_at) '
+                    'VALUES (%s, %s, %s, %s, %s) ON CONFLICT (game_id, "row", col) DO NOTHING',
+                    (game_id, r, c, 'VOID', now),
+                )
+        cur.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = %s", (game_id,))
         db.commit()
         flash("Game locked. Unclaimed spots marked as VOID.", "success")
 
@@ -906,13 +955,14 @@ def admin_remove(game_id):
         abort(400)
 
     db = get_db()
-    db.execute(
-        "DELETE FROM claims WHERE game_id = ? AND row = ? AND col = ?",
+    cur = get_cursor()
+    cur.execute(
+        'DELETE FROM claims WHERE game_id = %s AND "row" = %s AND col = %s',
         (game_id, row, col),
     )
     count = get_claim_count(game_id)
     if count < 100:
-        db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
+        cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
     db.commit()
     flash(f"Removed claim at row {row}, col {col}.", "success")
     return redirect(url_for("admin_panel", game_id=game_id))
@@ -942,10 +992,9 @@ def superadmin_dashboard():
     if not is_superadmin():
         return redirect(url_for("superadmin_login"))
 
-    db = get_db()
-    all_games = db.execute(
-        "SELECT * FROM games ORDER BY created_at DESC"
-    ).fetchall()
+    cur = get_cursor()
+    cur.execute("SELECT * FROM games ORDER BY created_at DESC")
+    all_games = cur.fetchall()
 
     games = []
     for game in all_games:
@@ -971,14 +1020,17 @@ def superadmin_shutdown(game_id):
         abort(403)
 
     db = get_db()
-    game = db.execute("SELECT name FROM games WHERE id = ?", (game_id,)).fetchone()
+    cur = get_cursor()
+    cur.execute("SELECT name FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     if not game:
         abort(404)
 
     game_name = game["name"]
-    db.execute("DELETE FROM claims WHERE game_id = ?", (game_id,))
-    db.execute("DELETE FROM players WHERE game_id = ?", (game_id,))
-    db.execute("DELETE FROM games WHERE id = ?", (game_id,))
+    cur.execute("DELETE FROM square_requests WHERE game_id = %s", (game_id,))
+    cur.execute("DELETE FROM claims WHERE game_id = %s", (game_id,))
+    cur.execute("DELETE FROM players WHERE game_id = %s", (game_id,))
+    cur.execute("DELETE FROM games WHERE id = %s", (game_id,))
     db.commit()
 
     flash(f"Game '{game_name}' has been shut down and deleted.", "success")
@@ -991,33 +1043,33 @@ def superadmin_lock(game_id):
         abort(403)
 
     db = get_db()
-    game = db.execute("SELECT is_locked FROM games WHERE id = ?", (game_id,)).fetchone()
+    cur = get_cursor()
+    cur.execute("SELECT is_locked FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
     if not game:
         abort(404)
 
     if game["is_locked"]:
-        db.execute(
-            "DELETE FROM claims WHERE game_id = ? AND player_name = 'VOID'",
+        cur.execute(
+            "DELETE FROM claims WHERE game_id = %s AND player_name = 'VOID'",
             (game_id,),
         )
-        db.execute("UPDATE games SET is_locked = 0 WHERE id = ?", (game_id,))
+        cur.execute("UPDATE games SET is_locked = 0 WHERE id = %s", (game_id,))
         count = get_claim_count(game_id)
         if count < 100:
-            db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
+            cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
         db.commit()
         flash("Game unlocked.", "success")
     else:
         now = datetime.datetime.now().isoformat()
         for r in range(1, 11):
             for c in range(1, 11):
-                try:
-                    db.execute(
-                        "INSERT INTO claims (game_id, row, col, player_name, claimed_at) VALUES (?, ?, ?, 'VOID', ?)",
-                        (game_id, r, c, now),
-                    )
-                except sqlite3.IntegrityError:
-                    pass
-        db.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = ?", (game_id,))
+                cur.execute(
+                    'INSERT INTO claims (game_id, "row", col, player_name, claimed_at) '
+                    'VALUES (%s, %s, %s, %s, %s) ON CONFLICT (game_id, "row", col) DO NOTHING',
+                    (game_id, r, c, 'VOID', now),
+                )
+        cur.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = %s", (game_id,))
         db.commit()
         flash("Game locked.", "success")
 
