@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Players: {{ game["name"] }}{% endblock %}
+{% block content %}
+<div class="admin-nav">
+    <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+    <span class="nav-sep">/</span>
+    <a href="{{ url_for('admin_panel', game_id=game_id) }}">{{ game["name"] }}</a>
+    <span class="nav-sep">/</span>
+    <span class="nav-current">Players</span>
+</div>
+
+<div class="admin-tabs">
+    <a href="{{ url_for('admin_panel', game_id=game_id) }}" class="tab">Grid</a>
+    <a href="{{ url_for('admin_players', game_id=game_id) }}" class="tab tab-active">Players</a>
+</div>
+
+<h2>Players ({{ players|length }})</h2>
+
+{% if not players %}
+<div class="card" style="margin-top:1rem;">
+    <p style="color:#8b949e;">No players have joined yet.</p>
+</div>
+{% else %}
+<div class="table-wrapper">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Player</th>
+                <th>Claims</th>
+                <th>Joined</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in players %}
+            <tr class="{% if p['is_banned'] %}row-banned{% endif %}">
+                <td><strong>{{ p["player_name"] }}</strong></td>
+                <td>{{ player_claims.get(p["player_name"], 0) }}</td>
+                <td>{{ p["joined_at"][:16].replace("T", " ") }}</td>
+                <td>
+                    {% if p["is_banned"] %}
+                    <span class="badge badge-red">Banned</span>
+                    {% else %}
+                    <span class="badge badge-green">Active</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if p["is_banned"] %}
+                    <form method="post" action="{{ url_for('admin_unban', game_id=game_id) }}" style="display:inline;">
+                        <input type="hidden" name="player_name" value="{{ p['player_name'] }}">
+                        <button type="submit" class="btn btn-small btn-unban">Unban</button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="{{ url_for('admin_ban', game_id=game_id) }}" style="display:inline;"
+                          onsubmit="return confirm('Ban {{ p.player_name }}? This will remove all their claims.')">
+                        <input type="hidden" name="player_name" value="{{ p['player_name'] }}">
+                        <button type="submit" class="btn btn-small btn-ban">Ban</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

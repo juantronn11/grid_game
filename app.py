@@ -23,9 +23,10 @@ CREATE TABLE IF NOT EXISTS games (
     name        TEXT NOT NULL,
     admin_password_hash TEXT NOT NULL,
     created_at  TEXT NOT NULL,
-    row_numbers TEXT NOT NULL,
-    col_numbers TEXT NOT NULL,
-    is_complete INTEGER NOT NULL DEFAULT 0
+    row_numbers TEXT NOT NULL DEFAULT '[]',
+    col_numbers TEXT NOT NULL DEFAULT '[]',
+    is_complete INTEGER NOT NULL DEFAULT 0,
+    numbers_released INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS claims (
@@ -38,7 +39,30 @@ CREATE TABLE IF NOT EXISTS claims (
     FOREIGN KEY (game_id) REFERENCES games(id),
     UNIQUE(game_id, row, col)
 );
+
+CREATE TABLE IF NOT EXISTS players (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id     TEXT NOT NULL,
+    player_name TEXT NOT NULL,
+    joined_at   TEXT NOT NULL,
+    is_banned   INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (game_id) REFERENCES games(id),
+    UNIQUE(game_id, player_name)
+);
 """
+
+MIGRATIONS = [
+    "ALTER TABLE games ADD COLUMN numbers_released INTEGER NOT NULL DEFAULT 0",
+    """CREATE TABLE IF NOT EXISTS players (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        game_id     TEXT NOT NULL,
+        player_name TEXT NOT NULL,
+        joined_at   TEXT NOT NULL,
+        is_banned   INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (game_id) REFERENCES games(id),
+        UNIQUE(game_id, player_name)
+    )""",
+]
 
 
 # ── Database helpers ──────────────────────────────────────────────
@@ -62,6 +86,12 @@ def close_db(exception):
 def init_db():
     db = sqlite3.connect(DATABASE)
     db.executescript(SCHEMA_SQL)
+    for migration in MIGRATIONS:
+        try:
+            db.execute(migration)
+            db.commit()
+        except sqlite3.OperationalError:
+            pass
     db.close()
 
 
@@ -101,11 +131,38 @@ def get_claim_count(game_id):
     return row["cnt"]
 
 
+def get_player_count(game_id):
+    db = get_db()
+    row = db.execute(
+        "SELECT COUNT(*) as cnt FROM players WHERE game_id = ? AND is_banned = 0",
+        (game_id,),
+    ).fetchone()
+    return row["cnt"]
+
+
 def is_admin(game_id):
     return game_id in session.get("admin_games", [])
 
 
-# ── Routes ────────────────────────────────────────────────────────
+def generate_and_store_numbers(game_id):
+    db = get_db()
+    game = db.execute("SELECT row_numbers, col_numbers FROM games WHERE id = ?", (game_id,)).fetchone()
+    existing_row = json.loads(game["row_numbers"])
+    existing_col = json.loads(game["col_numbers"])
+    if existing_row and existing_col:
+        return existing_row, existing_col
+
+    row_numbers = [random.randint(0, 9) for _ in range(10)]
+    col_numbers = [random.randint(0, 9) for _ in range(10)]
+    db.execute(
+        "UPDATE games SET row_numbers = ?, col_numbers = ? WHERE id = ?",
+        (json.dumps(row_numbers), json.dumps(col_numbers), game_id),
+    )
+    db.commit()
+    return row_numbers, col_numbers
+
+
+# ── Routes: Public ────────────────────────────────────────────────
 
 @app.route("/")
 def index():
@@ -132,22 +189,13 @@ def create_game():
         return redirect(url_for("create_game"))
 
     game_id = secrets.token_hex(4)
-    row_numbers = []
-    col_numbers = []
     now = datetime.datetime.now().isoformat()
 
     db = get_db()
     db.execute(
         "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (
-            game_id,
-            name,
-            generate_password_hash(password),
-            now,
-            json.dumps(row_numbers),
-            json.dumps(col_numbers),
-        ),
+        "VALUES (?, ?, ?, ?, '[]', '[]')",
+        (game_id, name, generate_password_hash(password), now),
     )
     db.commit()
 
@@ -159,90 +207,24 @@ def create_game():
     return redirect(url_for("admin_panel", game_id=game_id))
 
 
-@app.route("/admin/<game_id>", methods=["GET", "POST"])
-def admin_panel(game_id):
-    db = get_db()
-    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
-    if not game:
-        abort(404)
-
-    # Password gate
-    if not is_admin(game_id):
-        if request.method == "POST" and "admin_password" in request.form:
-            if check_password_hash(game["admin_password_hash"], request.form["admin_password"]):
-                admin_games = session.get("admin_games", [])
-                admin_games.append(game_id)
-                session["admin_games"] = admin_games
-                return redirect(url_for("admin_panel", game_id=game_id))
-            else:
-                flash("Wrong password.", "error")
-        return render_template("admin_login.html", game_id=game_id, game_name=game["name"])
-
-    grid, _ = build_grid_from_db(game_id)
-    claim_count = get_claim_count(game_id)
-    col_numbers = json.loads(game["col_numbers"])
-    row_numbers = json.loads(game["row_numbers"])
-
-    player_url = request.url_root.rstrip("/") + url_for("game_view", game_id=game_id)
-
-    return render_template(
-        "admin_panel.html",
-        game=game,
-        game_id=game_id,
-        grid=grid.grid,
-        col_numbers=col_numbers,
-        row_numbers=row_numbers,
-        claim_count=claim_count,
-        player_url=player_url,
-    )
-
-
-@app.route("/admin/<game_id>/pdf")
-def admin_pdf(game_id):
-    if not is_admin(game_id):
-        abort(403)
-
-    grid, game = build_grid_from_db(game_id)
-    if not grid:
-        abort(404)
-    if not game["is_complete"]:
-        flash("PDF is only available when the grid is full.", "error")
-        return redirect(url_for("admin_panel", game_id=game_id))
-
-    pdf_path = export_grid_to_pdf(grid)
-    return send_file(
-        pdf_path,
-        as_attachment=True,
-        download_name=f"grid_{game_id}.pdf",
-    )
-
-
-@app.route("/admin/<game_id>/remove", methods=["POST"])
-def admin_remove(game_id):
-    if not is_admin(game_id):
-        abort(403)
-
-    row = request.form.get("row", type=int)
-    col = request.form.get("col", type=int)
-    if row is None or col is None:
-        abort(400)
-
-    db = get_db()
-    db.execute(
-        "DELETE FROM claims WHERE game_id = ? AND row = ? AND col = ?",
-        (game_id, row, col),
-    )
-    db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
-    db.commit()
-    flash(f"Removed claim at row {row}, col {col}.", "success")
-    return redirect(url_for("admin_panel", game_id=game_id))
-
+# ── Routes: Player ────────────────────────────────────────────────
 
 @app.route("/game/<game_id>")
 def game_view(game_id):
     player_names = session.get("player_names", {})
     if game_id not in player_names:
         return redirect(url_for("join_game", game_id=game_id))
+
+    db = get_db()
+    player = db.execute(
+        "SELECT is_banned FROM players WHERE game_id = ? AND player_name = ?",
+        (game_id, player_names[game_id]),
+    ).fetchone()
+    if player and player["is_banned"]:
+        flash("You have been removed from this game.", "error")
+        del player_names[game_id]
+        session["player_names"] = player_names
+        return redirect(url_for("index"))
 
     grid, game = build_grid_from_db(game_id)
     if not grid:
@@ -280,6 +262,24 @@ def join_game(game_id):
             flash("Name must be 20 characters or less.", "error")
             return redirect(url_for("join_game", game_id=game_id))
 
+        existing = db.execute(
+            "SELECT is_banned FROM players WHERE game_id = ? AND player_name = ?",
+            (game_id, name),
+        ).fetchone()
+        if existing and existing["is_banned"]:
+            flash("You have been removed from this game.", "error")
+            return redirect(url_for("index"))
+
+        now = datetime.datetime.now().isoformat()
+        try:
+            db.execute(
+                "INSERT INTO players (game_id, player_name, joined_at) VALUES (?, ?, ?)",
+                (game_id, name, now),
+            )
+            db.commit()
+        except sqlite3.IntegrityError:
+            pass
+
         player_names = session.get("player_names", {})
         player_names[game_id] = name
         session["player_names"] = player_names
@@ -301,6 +301,14 @@ def claim_spot(game_id):
         return redirect(url_for("game_view", game_id=game_id))
 
     db = get_db()
+    player = db.execute(
+        "SELECT is_banned FROM players WHERE game_id = ? AND player_name = ?",
+        (game_id, player_names[game_id]),
+    ).fetchone()
+    if player and player["is_banned"]:
+        flash("You have been removed from this game.", "error")
+        return redirect(url_for("index"))
+
     now = datetime.datetime.now().isoformat()
     try:
         db.execute(
@@ -312,18 +320,220 @@ def claim_spot(game_id):
     except sqlite3.IntegrityError:
         flash("That spot was already taken! Pick another.", "error")
 
-    # Check if grid is full — generate numbers on completion
     count = get_claim_count(game_id)
     if count >= 100:
-        row_numbers = [random.randint(0, 9) for _ in range(10)]
-        col_numbers = [random.randint(0, 9) for _ in range(10)]
-        db.execute(
-            "UPDATE games SET is_complete = 1, row_numbers = ?, col_numbers = ? WHERE id = ?",
-            (json.dumps(row_numbers), json.dumps(col_numbers), game_id),
-        )
+        generate_and_store_numbers(game_id)
+        db.execute("UPDATE games SET is_complete = 1 WHERE id = ?", (game_id,))
         db.commit()
 
     return redirect(url_for("game_view", game_id=game_id))
+
+
+# ── Routes: Admin ─────────────────────────────────────────────────
+
+@app.route("/admin")
+def admin_dashboard():
+    admin_games = session.get("admin_games", [])
+    if not admin_games:
+        return render_template("admin_dashboard.html", games=[])
+
+    db = get_db()
+    games = []
+    for gid in admin_games:
+        game = db.execute("SELECT * FROM games WHERE id = ?", (gid,)).fetchone()
+        if game:
+            games.append({
+                "id": game["id"],
+                "name": game["name"],
+                "created_at": game["created_at"],
+                "is_complete": game["is_complete"],
+                "numbers_released": game["numbers_released"],
+                "claim_count": get_claim_count(gid),
+                "player_count": get_player_count(gid),
+            })
+
+    return render_template("admin_dashboard.html", games=games)
+
+
+@app.route("/admin/<game_id>", methods=["GET", "POST"])
+def admin_panel(game_id):
+    db = get_db()
+    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        abort(404)
+
+    if not is_admin(game_id):
+        if request.method == "POST" and "admin_password" in request.form:
+            if check_password_hash(game["admin_password_hash"], request.form["admin_password"]):
+                admin_games = session.get("admin_games", [])
+                admin_games.append(game_id)
+                session["admin_games"] = admin_games
+                return redirect(url_for("admin_panel", game_id=game_id))
+            else:
+                flash("Wrong password.", "error")
+        return render_template("admin_login.html", game_id=game_id, game_name=game["name"])
+
+    grid, _ = build_grid_from_db(game_id)
+    claim_count = get_claim_count(game_id)
+    player_count = get_player_count(game_id)
+    col_numbers = json.loads(game["col_numbers"])
+    row_numbers = json.loads(game["row_numbers"])
+    has_numbers = bool(col_numbers and row_numbers)
+
+    player_url = request.url_root.rstrip("/") + url_for("game_view", game_id=game_id)
+
+    return render_template(
+        "admin_panel.html",
+        game=game,
+        game_id=game_id,
+        grid=grid.grid,
+        col_numbers=col_numbers,
+        row_numbers=row_numbers,
+        claim_count=claim_count,
+        player_count=player_count,
+        player_url=player_url,
+        has_numbers=has_numbers,
+    )
+
+
+@app.route("/admin/<game_id>/players")
+def admin_players(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    db = get_db()
+    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        abort(404)
+
+    players = db.execute(
+        "SELECT * FROM players WHERE game_id = ? ORDER BY joined_at DESC",
+        (game_id,),
+    ).fetchall()
+
+    player_claims = {}
+    claims = db.execute(
+        "SELECT player_name, COUNT(*) as cnt FROM claims WHERE game_id = ? GROUP BY player_name",
+        (game_id,),
+    ).fetchall()
+    for c in claims:
+        player_claims[c["player_name"]] = c["cnt"]
+
+    return render_template(
+        "admin_players.html",
+        game=game,
+        game_id=game_id,
+        players=players,
+        player_claims=player_claims,
+    )
+
+
+@app.route("/admin/<game_id>/ban", methods=["POST"])
+def admin_ban(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    player_name = request.form.get("player_name", "").strip()
+    if not player_name:
+        abort(400)
+
+    db = get_db()
+    db.execute(
+        "UPDATE players SET is_banned = 1 WHERE game_id = ? AND player_name = ?",
+        (game_id, player_name),
+    )
+    db.execute(
+        "DELETE FROM claims WHERE game_id = ? AND player_name = ?",
+        (game_id, player_name),
+    )
+    count = get_claim_count(game_id)
+    if count < 100:
+        db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
+    db.commit()
+
+    flash(f"Banned '{player_name}' and removed their claims.", "success")
+    return redirect(url_for("admin_players", game_id=game_id))
+
+
+@app.route("/admin/<game_id>/unban", methods=["POST"])
+def admin_unban(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    player_name = request.form.get("player_name", "").strip()
+    if not player_name:
+        abort(400)
+
+    db = get_db()
+    db.execute(
+        "UPDATE players SET is_banned = 0 WHERE game_id = ? AND player_name = ?",
+        (game_id, player_name),
+    )
+    db.commit()
+
+    flash(f"Unbanned '{player_name}'.", "success")
+    return redirect(url_for("admin_players", game_id=game_id))
+
+
+@app.route("/admin/<game_id>/release", methods=["POST"])
+def admin_release(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    generate_and_store_numbers(game_id)
+    db = get_db()
+    db.execute(
+        "UPDATE games SET numbers_released = 1 WHERE id = ?", (game_id,)
+    )
+    db.commit()
+
+    flash("Numbers have been released to players!", "success")
+    return redirect(url_for("admin_panel", game_id=game_id))
+
+
+@app.route("/admin/<game_id>/pdf")
+def admin_pdf(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    grid, game = build_grid_from_db(game_id)
+    if not grid:
+        abort(404)
+
+    col_numbers = json.loads(game["col_numbers"])
+    if not col_numbers:
+        flash("Numbers have not been generated yet.", "error")
+        return redirect(url_for("admin_panel", game_id=game_id))
+
+    pdf_path = export_grid_to_pdf(grid)
+    return send_file(
+        pdf_path,
+        as_attachment=True,
+        download_name=f"grid_{game_id}.pdf",
+    )
+
+
+@app.route("/admin/<game_id>/remove", methods=["POST"])
+def admin_remove(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    row = request.form.get("row", type=int)
+    col = request.form.get("col", type=int)
+    if row is None or col is None:
+        abort(400)
+
+    db = get_db()
+    db.execute(
+        "DELETE FROM claims WHERE game_id = ? AND row = ? AND col = ?",
+        (game_id, row, col),
+    )
+    count = get_claim_count(game_id)
+    if count < 100:
+        db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
+    db.commit()
+    flash(f"Removed claim at row {row}, col {col}.", "success")
+    return redirect(url_for("admin_panel", game_id=game_id))
 
 
 if __name__ == "__main__":

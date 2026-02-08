@@ -170,6 +170,16 @@ label {
     color: #3fb950;
 }
 
+.badge-blue {
+    background: rgba(31, 111, 235, 0.25);
+    color: #58a6ff;
+}
+
+.badge-red {
+    background: rgba(248, 81, 73, 0.2);
+    color: #f85149;
+}
+
 /* ── Admin / Game headers ──────────────────────── */
 
 .admin-header,
@@ -217,12 +227,192 @@ label {
     color: #58a6ff;
 }
 
+.banner-waiting {
+    background: rgba(210, 153, 34, 0.12);
+    border: 1px solid #d29922;
+    color: #d29922;
+}
+
 /* ── Disabled button ──────────────────────────── */
 
 .btn-disabled {
     background: #21262d;
     color: #484f58;
     cursor: not-allowed;
+}
+
+.btn-release {
+    background: #1f6feb;
+    color: #fff;
+}
+
+.btn-release:hover {
+    background: #388bfd;
+}
+
+.btn-ban {
+    background: rgba(248, 81, 73, 0.2);
+    color: #f85149;
+}
+
+.btn-ban:hover {
+    background: rgba(248, 81, 73, 0.35);
+}
+
+.btn-unban {
+    background: rgba(35, 134, 54, 0.2);
+    color: #3fb950;
+}
+
+.btn-unban:hover {
+    background: rgba(35, 134, 54, 0.35);
+}
+
+/* ── Admin nav & tabs ─────────────────────────── */
+
+.admin-nav {
+    font-size: 0.85rem;
+    color: #8b949e;
+    margin-bottom: 0.75rem;
+}
+
+.admin-nav a {
+    color: #58a6ff;
+    text-decoration: none;
+}
+
+.admin-nav a:hover {
+    text-decoration: underline;
+}
+
+.nav-sep {
+    margin: 0 0.4rem;
+    color: #484f58;
+}
+
+.nav-current {
+    color: #e1e4e8;
+}
+
+.admin-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid #30363d;
+}
+
+.tab {
+    padding: 0.6rem 1.2rem;
+    text-decoration: none;
+    color: #8b949e;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s;
+}
+
+.tab:hover {
+    color: #e1e4e8;
+}
+
+.tab-active {
+    color: #e1e4e8;
+    border-bottom-color: #58a6ff;
+}
+
+/* ── Dashboard ────────────────────────────────── */
+
+.dash-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+}
+
+.dash-header .btn {
+    margin-top: 0;
+}
+
+.game-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+}
+
+.game-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 1.25rem;
+}
+
+.game-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.game-card-header h3 {
+    font-size: 1.05rem;
+    color: #e1e4e8;
+}
+
+.game-card-stats {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.8rem;
+    color: #8b949e;
+    margin-bottom: 0.6rem;
+}
+
+.game-card-status {
+    margin-bottom: 0.75rem;
+}
+
+.game-card-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.game-card-actions .btn-small {
+    text-decoration: none;
+}
+
+/* ── Data table (players) ─────────────────────── */
+
+.table-wrapper {
+    overflow-x: auto;
+    margin-top: 1rem;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.data-table th,
+.data-table td {
+    padding: 0.7rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid #21262d;
+}
+
+.data-table th {
+    color: #8b949e;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.data-table tbody tr:hover {
+    background: rgba(88, 166, 255, 0.04);
+}
+
+.row-banned {
+    opacity: 0.5;
 }
 
 /* ── Share box ─────────────────────────────────── */

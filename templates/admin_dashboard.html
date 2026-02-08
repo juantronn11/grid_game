@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+{% block content %}
+<div class="dash-header">
+    <h2>Admin Dashboard</h2>
+    <a href="{{ url_for('create_game') }}" class="btn btn-primary">+ New Game</a>
+</div>
+
+{% if not games %}
+<div class="card center-card">
+    <p>No games yet. Create one to get started.</p>
+</div>
+{% else %}
+<div class="game-cards">
+    {% for g in games %}
+    <div class="game-card">
+        <div class="game-card-header">
+            <h3>{{ g.name }}</h3>
+            <span class="badge">{{ g.claim_count }}/100</span>
+        </div>
+        <div class="game-card-stats">
+            <span>{{ g.player_count }} players</span>
+            <span>ID: {{ g.id }}</span>
+        </div>
+        <div class="game-card-status">
+            {% if g.numbers_released %}
+                <span class="badge badge-green">Numbers Released</span>
+            {% elif g.is_complete %}
+                <span class="badge badge-blue">Grid Full</span>
+            {% else %}
+                <span class="badge">In Progress</span>
+            {% endif %}
+        </div>
+        <div class="game-card-actions">
+            <a href="{{ url_for('admin_panel', game_id=g.id) }}" class="btn btn-secondary btn-small">Grid</a>
+            <a href="{{ url_for('admin_players', game_id=g.id) }}" class="btn btn-secondary btn-small">Players</a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
