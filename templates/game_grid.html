@@ -8,7 +8,7 @@
     <h2>{{ game["name"] }}</h2>
     <div class="game-info">
         <span>Playing as: <strong>{{ player_name }}</strong></span>
-        <span class="badge">{{ claim_count }}/100 spots filled</span>
+        <span class="badge">{{ claim_count }}/{{ total_spots }} spots filled</span>
     </div>
 </div>
 
@@ -68,14 +68,14 @@
         <table class="game-grid">
             <tr>
                 <th class="corner-cell"></th>
-                {% for c in range(10) %}
+                {% for c in range(grid_size) %}
                 <th class="number-cell">{% if game["numbers_released"] %}{{ col_numbers[c] }}{% else %}?{% endif %}</th>
                 {% endfor %}
             </tr>
-            {% for r in range(1, 11) %}
+            {% for r in range(1, grid_size + 1) %}
             <tr>
                 <th class="number-cell">{% if game["numbers_released"] %}{{ row_numbers[r-1] }}{% else %}?{% endif %}</th>
-                {% for c in range(1, 11) %}
+                {% for c in range(1, grid_size + 1) %}
                 <td class="{% if grid[r][c] == 'VOID' %}void{% elif grid[r][c] %}claimed{% else %}open{% endif %}">
                     {% if grid[r][c] == 'VOID' %}
                         <span class="void-label">VOID</span>

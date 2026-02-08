@@ -16,7 +16,7 @@
     <div class="game-card">
         <div class="game-card-header">
             <h3>{{ g.name }}</h3>
-            <span class="badge">{{ g.claim_count }}/100</span>
+            <span class="badge">{{ g.claim_count }}/{{ g.total_spots }}</span>
         </div>
         <div class="game-card-stats">
             <span>Playing as: <strong>{{ g.player_name }}</strong></span>

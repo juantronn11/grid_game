@@ -21,7 +21,7 @@
 
 <div class="admin-header">
     <div class="admin-info">
-        <span class="badge">{{ claim_count }}/100 spots</span>
+        <span class="badge">{{ claim_count }}/{{ total_spots }} spots</span>
         <span class="badge">{{ player_count }} players</span>
         {% if locked %}
         <span class="badge badge-red">Locked</span>
@@ -89,14 +89,14 @@
         <table class="game-grid">
             <tr>
                 <th class="corner-cell"></th>
-                {% for c in range(10) %}
+                {% for c in range(grid_size) %}
                 <th class="number-cell">{% if has_numbers %}{{ col_numbers[c] }}{% else %}?{% endif %}</th>
                 {% endfor %}
             </tr>
-            {% for r in range(1, 11) %}
+            {% for r in range(1, grid_size + 1) %}
             <tr>
                 <th class="number-cell">{% if has_numbers %}{{ row_numbers[r-1] }}{% else %}?{% endif %}</th>
-                {% for c in range(1, 11) %}
+                {% for c in range(1, grid_size + 1) %}
                 <td class="{% if grid[r][c] == 'VOID' %}void{% elif grid[r][c] %}claimed{% else %}open{% endif %}">
                     {% if grid[r][c] == 'VOID' %}
                         <span class="void-label">VOID</span>

@@ -8,25 +8,26 @@ GRIDS_DIR = os.path.join(SCRIPT_DIR, "grids")
 
 
 class NameGrid:
-    def __init__(self):
-        self.grid = [["" for _ in range(11)] for _ in range(11)]
+    def __init__(self, grid_size=10):
+        self.size = grid_size
+        self.grid = [["" for _ in range(grid_size + 1)] for _ in range(grid_size + 1)]
         self.numbers_generated = False
 
     def generate_numbers(self):
-        for col in range(1, 11):
-            self.grid[0][col] = str(random.randint(0, 9))
-        for row in range(1, 11):
-            self.grid[row][0] = str(random.randint(0, 9))
+        for col in range(1, self.size + 1):
+            self.grid[0][col] = str(random.randint(0, self.size - 1))
+        for row in range(1, self.size + 1):
+            self.grid[row][0] = str(random.randint(0, self.size - 1))
         self.numbers_generated = True
 
     def add_name(self, row, col, name):
-        if not (1 <= row <= 10 and 1 <= col <= 10):
+        if not (1 <= row <= self.size and 1 <= col <= self.size):
             return False
         self.grid[row][col] = name
         return True
 
     def clear_cell(self, row, col):
-        if not (1 <= row <= 10 and 1 <= col <= 10):
+        if not (1 <= row <= self.size and 1 <= col <= self.size):
             return False
         self.grid[row][col] = ""
         return True
@@ -37,22 +38,22 @@ class NameGrid:
     def is_complete(self):
         return any(
             self.grid[r][c] != ""
-            for r in range(1, 11)
-            for c in range(1, 11)
+            for r in range(1, self.size + 1)
+            for c in range(1, self.size + 1)
         )
 
     def __str__(self):
         widths = []
-        for col in range(11):
-            w = max(len(self.grid[row][col]) for row in range(11))
+        for col in range(self.size + 1):
+            w = max(len(self.grid[row][col]) for row in range(self.size + 1))
             widths.append(max(w, 4))
 
         lines = []
         for row_idx, row in enumerate(self.grid):
-            cells = [row[c].center(widths[c]) for c in range(11)]
+            cells = [row[c].center(widths[c]) for c in range(self.size + 1)]
             lines.append(" | ".join(cells))
             if row_idx == 0:
-                lines.append("-+-".join("-" * widths[c] for c in range(11)))
+                lines.append("-+-".join("-" * widths[c] for c in range(self.size + 1)))
 
         return "\n".join(lines)
 
@@ -77,13 +78,14 @@ def export_grid_to_pdf(grid, output_dir=None):
 
     # Grid dimensions
     table_width = pdf.w - pdf.l_margin - pdf.r_margin
-    cell_w = table_width / 11
+    dim = grid.size + 1
+    cell_w = table_width / dim
     cell_h = 14
     start_x = pdf.l_margin
     start_y = pdf.get_y()
 
-    for row_idx in range(11):
-        for col_idx in range(11):
+    for row_idx in range(dim):
+        for col_idx in range(dim):
             x = start_x + col_idx * cell_w
             y = start_y + row_idx * cell_h
             text = grid.get_cell(row_idx, col_idx)
@@ -148,8 +150,8 @@ def interactive_cli():
             choice = input("\n> ").strip().upper()
 
             if choice == "A":
-                row = prompt_int("  Row (1-10): ", 1, 10)
-                col = prompt_int("  Column (1-10): ", 1, 10)
+                row = prompt_int(f"  Row (1-{grid.size}): ", 1, grid.size)
+                col = prompt_int(f"  Column (1-{grid.size}): ", 1, grid.size)
                 name = input("  Player name: ").strip()
                 if not name:
                     print("  Name cannot be empty.\n")
@@ -160,8 +162,8 @@ def interactive_cli():
                     print("  Invalid position.\n")
 
             elif choice == "R":
-                row = prompt_int("  Row (1-10): ", 1, 10)
-                col = prompt_int("  Column (1-10): ", 1, 10)
+                row = prompt_int(f"  Row (1-{grid.size}): ", 1, grid.size)
+                col = prompt_int(f"  Column (1-{grid.size}): ", 1, grid.size)
                 if grid.clear_cell(row, col):
                     print(f"  Cleared cell at row {row}, column {col}.\n")
                 else:

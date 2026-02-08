@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS games (
     lock_at     TEXT NOT NULL DEFAULT '',
     square_price TEXT NOT NULL DEFAULT '',
     payout_info TEXT NOT NULL DEFAULT '',
-    max_claims  INTEGER NOT NULL DEFAULT 0
+    max_claims  INTEGER NOT NULL DEFAULT 0,
+    grid_size   INTEGER NOT NULL DEFAULT 10
 );
 
 CREATE TABLE IF NOT EXISTS claims (
@@ -108,6 +109,7 @@ MIGRATIONS = [
         requested_at TEXT NOT NULL,
         FOREIGN KEY (game_id) REFERENCES games(id)
     )""",
+    "ALTER TABLE games ADD COLUMN grid_size INTEGER NOT NULL DEFAULT 10",
 ]
 
 
@@ -149,7 +151,7 @@ def build_grid_from_db(game_id):
     if not game:
         return None, None
 
-    grid = NameGrid()
+    grid = NameGrid(game["grid_size"])
     col_numbers = json.loads(game["col_numbers"])
     row_numbers = json.loads(game["row_numbers"])
     if col_numbers and row_numbers:
@@ -208,14 +210,15 @@ def is_game_locked(game):
 
 def generate_and_store_numbers(game_id):
     db = get_db()
-    game = db.execute("SELECT row_numbers, col_numbers FROM games WHERE id = ?", (game_id,)).fetchone()
+    game = db.execute("SELECT row_numbers, col_numbers, grid_size FROM games WHERE id = ?", (game_id,)).fetchone()
     existing_row = json.loads(game["row_numbers"])
     existing_col = json.loads(game["col_numbers"])
     if existing_row and existing_col:
         return existing_row, existing_col
 
-    row_numbers = [random.randint(0, 9) for _ in range(10)]
-    col_numbers = [random.randint(0, 9) for _ in range(10)]
+    gs = game["grid_size"]
+    row_numbers = [random.randint(0, gs - 1) for _ in range(gs)]
+    col_numbers = [random.randint(0, gs - 1) for _ in range(gs)]
     db.execute(
         "UPDATE games SET row_numbers = ?, col_numbers = ? WHERE id = ?",
         (json.dumps(row_numbers), json.dumps(col_numbers), game_id),
@@ -253,6 +256,7 @@ def browse_games():
             "locked": locked,
             "numbers_released": game["numbers_released"],
             "already_joined": already_joined,
+            "total_spots": game["grid_size"] ** 2,
         })
 
     return render_template("browse_games.html", games=games)
@@ -294,15 +298,18 @@ def create_game():
     payout_info = request.form.get("payout_info", "").strip()
     lock_at = request.form.get("lock_at", "").strip()
     max_claims = request.form.get("max_claims", 0, type=int)
+    grid_size = request.form.get("grid_size", 10, type=int)
+    if grid_size < 5 or grid_size > 10:
+        grid_size = 10
 
     game_id = secrets.token_hex(4)
     now = datetime.datetime.now().isoformat()
 
     db = get_db()
     db.execute(
-        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods, square_price, payout_info, lock_at, max_claims) "
-        "VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?, ?, ?)",
-        (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods), square_price, payout_info, lock_at, max_claims),
+        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods, square_price, payout_info, lock_at, max_claims, grid_size) "
+        "VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?, ?, ?, ?)",
+        (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods), square_price, payout_info, lock_at, max_claims, grid_size),
     )
     db.commit()
 
@@ -341,6 +348,7 @@ def my_games():
                 "claim_count": claim_count,
                 "numbers_released": game["numbers_released"],
                 "locked": is_game_locked(game),
+                "total_spots": game["grid_size"] ** 2,
             })
 
     return render_template("my_games.html", games=games)
@@ -407,6 +415,8 @@ def game_view(game_id):
         locked=locked,
         at_limit=at_limit,
         has_pending_request=has_pending_request,
+        grid_size=game["grid_size"],
+        total_spots=game["grid_size"] ** 2,
     )
 
 
@@ -505,7 +515,8 @@ def claim_spot(game_id):
 
     row = request.form.get("row", type=int)
     col = request.form.get("col", type=int)
-    if row is None or col is None or not (1 <= row <= 10 and 1 <= col <= 10):
+    gs = game["grid_size"]
+    if row is None or col is None or not (1 <= row <= gs and 1 <= col <= gs):
         flash("Invalid spot.", "error")
         return redirect(url_for("game_view", game_id=game_id))
 
@@ -541,7 +552,7 @@ def claim_spot(game_id):
         flash("That spot was already taken! Pick another.", "error")
 
     count = get_claim_count(game_id)
-    if count >= 100:
+    if count >= gs * gs:
         generate_and_store_numbers(game_id)
         db.execute("UPDATE games SET is_complete = 1 WHERE id = ?", (game_id,))
         db.commit()
@@ -624,6 +635,7 @@ def admin_dashboard():
                 "claim_count": get_claim_count(gid),
                 "player_count": get_player_count(gid),
                 "locked": is_game_locked(game),
+                "total_spots": game["grid_size"] ** 2,
             })
 
     return render_template("admin_dashboard.html", games=games)
@@ -676,6 +688,8 @@ def admin_panel(game_id):
         has_numbers=has_numbers,
         locked=locked,
         pending_request_count=pending_request_count,
+        grid_size=game["grid_size"],
+        total_spots=game["grid_size"] ** 2,
     )
 
 
@@ -730,6 +744,9 @@ def admin_ban(game_id):
         abort(400)
 
     db = get_db()
+    game = db.execute("SELECT grid_size FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        abort(404)
     db.execute(
         "UPDATE players SET is_banned = 1 WHERE game_id = ? AND player_name = ?",
         (game_id, player_name),
@@ -738,8 +755,9 @@ def admin_ban(game_id):
         "DELETE FROM claims WHERE game_id = ? AND player_name = ?",
         (game_id, player_name),
     )
+    total_spots = game["grid_size"] ** 2
     count = get_claim_count(game_id)
-    if count < 100:
+    if count < total_spots:
         db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
     db.commit()
 
@@ -838,9 +856,12 @@ def admin_lock(game_id):
         abort(403)
 
     db = get_db()
-    game = db.execute("SELECT is_locked FROM games WHERE id = ?", (game_id,)).fetchone()
+    game = db.execute("SELECT is_locked, grid_size FROM games WHERE id = ?", (game_id,)).fetchone()
     if not game:
         abort(404)
+
+    gs = game["grid_size"]
+    total_spots = gs * gs
 
     if game["is_locked"]:
         # Unlock: remove VOID claims and reopen
@@ -850,15 +871,15 @@ def admin_lock(game_id):
         )
         db.execute("UPDATE games SET is_locked = 0 WHERE id = ?", (game_id,))
         count = get_claim_count(game_id)
-        if count < 100:
+        if count < total_spots:
             db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
         db.commit()
         flash("Game unlocked. Players can join and claim spots again.", "success")
     else:
         # Lock: fill unclaimed spots with VOID
         now = datetime.datetime.now().isoformat()
-        for r in range(1, 11):
-            for c in range(1, 11):
+        for r in range(1, gs + 1):
+            for c in range(1, gs + 1):
                 try:
                     db.execute(
                         "INSERT INTO claims (game_id, row, col, player_name, claimed_at) VALUES (?, ?, ?, 'VOID', ?)",
@@ -906,12 +927,16 @@ def admin_remove(game_id):
         abort(400)
 
     db = get_db()
+    game = db.execute("SELECT grid_size FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        abort(404)
     db.execute(
         "DELETE FROM claims WHERE game_id = ? AND row = ? AND col = ?",
         (game_id, row, col),
     )
+    total_spots = game["grid_size"] ** 2
     count = get_claim_count(game_id)
-    if count < 100:
+    if count < total_spots:
         db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
     db.commit()
     flash(f"Removed claim at row {row}, col {col}.", "success")
@@ -960,6 +985,7 @@ def superadmin_dashboard():
             "locked": is_game_locked(game),
             "is_locked": game["is_locked"],
             "numbers_released": game["numbers_released"],
+            "total_spots": game["grid_size"] ** 2,
         })
 
     return render_template("superadmin_dashboard.html", games=games)
@@ -991,9 +1017,12 @@ def superadmin_lock(game_id):
         abort(403)
 
     db = get_db()
-    game = db.execute("SELECT is_locked FROM games WHERE id = ?", (game_id,)).fetchone()
+    game = db.execute("SELECT is_locked, grid_size FROM games WHERE id = ?", (game_id,)).fetchone()
     if not game:
         abort(404)
+
+    gs = game["grid_size"]
+    total_spots = gs * gs
 
     if game["is_locked"]:
         db.execute(
@@ -1002,14 +1031,14 @@ def superadmin_lock(game_id):
         )
         db.execute("UPDATE games SET is_locked = 0 WHERE id = ?", (game_id,))
         count = get_claim_count(game_id)
-        if count < 100:
+        if count < total_spots:
             db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
         db.commit()
         flash("Game unlocked.", "success")
     else:
         now = datetime.datetime.now().isoformat()
-        for r in range(1, 11):
-            for c in range(1, 11):
+        for r in range(1, gs + 1):
+            for c in range(1, gs + 1):
                 try:
                     db.execute(
                         "INSERT INTO claims (game_id, row, col, player_name, claimed_at) VALUES (?, ?, ?, 'VOID', ?)",

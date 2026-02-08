@@ -29,6 +29,16 @@
         <label for="lock_at">Game Start Time (auto-locks grid)</label>
         <input type="datetime-local" name="lock_at" id="lock_at" class="input">
 
+        <label for="grid_size">Grid Size</label>
+        <select name="grid_size" id="grid_size" class="input">
+            <option value="10" selected>10x10 (100 squares)</option>
+            <option value="9">9x9 (81 squares)</option>
+            <option value="8">8x8 (64 squares)</option>
+            <option value="7">7x7 (49 squares)</option>
+            <option value="6">6x6 (36 squares)</option>
+            <option value="5">5x5 (25 squares)</option>
+        </select>
+
         <label for="max_claims">Max Squares Per Player (0 = unlimited)</label>
         <input type="number" name="max_claims" id="max_claims" placeholder="e.g. 5" min="0" value="0" class="input">
 

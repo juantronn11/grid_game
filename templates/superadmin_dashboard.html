@@ -31,7 +31,7 @@
                 <td><strong>{{ g.name }}</strong></td>
                 <td>{{ g.team_x }} vs {{ g.team_y }}</td>
                 <td><code>{{ g.id }}</code></td>
-                <td>{{ g.claim_count }}/100</td>
+                <td>{{ g.claim_count }}/{{ g.total_spots }}</td>
                 <td>{{ g.player_count }}</td>
                 <td>{{ g.created_at[:16].replace("T", " ") }}</td>
                 <td>
