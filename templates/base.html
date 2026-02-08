@@ -10,6 +10,9 @@
 <body>
     <header>
         <a href="{{ url_for('index') }}" class="logo">Number Football Grid</a>
+        <nav class="header-nav">
+            <a href="{{ url_for('my_games') }}" class="header-link">My Games</a>
+        </nav>
     </header>
     <main>
         {% with messages = get_flashed_messages(with_categories=true) %}

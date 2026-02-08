@@ -255,6 +255,36 @@ def create_game():
 
 # ── Routes: Player ────────────────────────────────────────────────
 
+@app.route("/my-games")
+def my_games():
+    player_names = session.get("player_names", {})
+    if not player_names:
+        return render_template("my_games.html", games=[])
+
+    db = get_db()
+    games = []
+    for gid, pname in player_names.items():
+        game = db.execute("SELECT * FROM games WHERE id = ?", (gid,)).fetchone()
+        if game:
+            player = db.execute(
+                "SELECT is_banned FROM players WHERE game_id = ? AND player_name = ?",
+                (gid, pname),
+            ).fetchone()
+            if player and player["is_banned"]:
+                continue
+            claim_count = get_claim_count(gid)
+            games.append({
+                "id": game["id"],
+                "name": game["name"],
+                "player_name": pname,
+                "claim_count": claim_count,
+                "numbers_released": game["numbers_released"],
+                "locked": is_game_locked(game),
+            })
+
+    return render_template("my_games.html", games=games)
+
+
 @app.route("/game/<game_id>")
 def game_view(game_id):
     player_names = session.get("player_names", {})
@@ -392,6 +422,32 @@ def claim_spot(game_id):
         db.commit()
 
     return redirect(url_for("game_view", game_id=game_id))
+
+
+@app.route("/game/<game_id>/pdf")
+def player_pdf(game_id):
+    player_names = session.get("player_names", {})
+    if game_id not in player_names:
+        abort(403)
+
+    db = get_db()
+    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        abort(404)
+    if not game["numbers_released"]:
+        flash("Numbers have not been released yet.", "error")
+        return redirect(url_for("game_view", game_id=game_id))
+
+    grid, _ = build_grid_from_db(game_id)
+    if not grid:
+        abort(404)
+
+    pdf_path = export_grid_to_pdf(grid)
+    return send_file(
+        pdf_path,
+        as_attachment=True,
+        download_name=f"grid_{game_id}.pdf",
+    )
 
 
 # ── Routes: Admin ─────────────────────────────────────────────────

@@ -21,6 +21,7 @@
 {% if game["numbers_released"] %}
 <div class="banner banner-reveal">
     Numbers are in! Check your spots.
+    <a href="{{ url_for('player_pdf', game_id=game_id) }}" class="btn btn-small" style="margin-left:0.75rem;">Download PDF</a>
 </div>
 {% elif game["is_complete"] and not locked %}
 <div class="banner banner-waiting">

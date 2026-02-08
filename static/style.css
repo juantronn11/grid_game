@@ -15,6 +15,9 @@ header {
     background: #161b22;
     border-bottom: 1px solid #30363d;
     padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
 
 .logo {
@@ -22,6 +25,23 @@ header {
     text-decoration: none;
     font-size: 1.25rem;
     font-weight: 700;
+}
+
+.header-nav {
+    display: flex;
+    gap: 1rem;
+}
+
+.header-link {
+    color: #8b949e;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: color 0.15s;
+}
+
+.header-link:hover {
+    color: #e1e4e8;
 }
 
 main {
