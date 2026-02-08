@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Host Login{% endblock %}
+{% block content %}
+<div class="card center-card">
+    <h2>Host Login</h2>
+    <p>Enter your Game ID and admin password to manage your game.</p>
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="game_id">Game ID</label>
+        <input type="text" name="game_id" id="game_id" placeholder="e.g. a1b2c3d4" maxlength="8" required class="input">
+        <label for="password">Admin Password</label>
+        <input type="password" name="password" id="password" placeholder="Your game admin password" required class="input">
+        <button type="submit" class="btn btn-primary">Login</button>
+    </form>
+</div>
+{% endblock %}

@@ -787,6 +787,35 @@ def request_squares(game_id):
 
 # ── Routes: Admin ─────────────────────────────────────────────────
 
+@app.route("/admin/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
+def admin_login():
+    if request.method == "GET":
+        return render_template("admin_recover.html")
+
+    game_id = request.form.get("game_id", "").strip()
+    password = request.form.get("password", "").strip()
+
+    if not game_id or not password:
+        flash("Game ID and password are required.", "error")
+        return redirect(url_for("admin_login"))
+
+    cur = get_cursor()
+    cur.execute("SELECT admin_password_hash FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
+    if not game or not check_password_hash(game["admin_password_hash"], password):
+        flash("Invalid Game ID or password.", "error")
+        return redirect(url_for("admin_login"))
+
+    admin_games = session.get("admin_games", [])
+    if game_id not in admin_games:
+        admin_games.append(game_id)
+    session["admin_games"] = admin_games
+
+    flash("Logged in as host!", "success")
+    return redirect(url_for("admin_panel", game_id=game_id))
+
+
 @app.route("/admin")
 def admin_dashboard():
     admin_games = session.get("admin_games", [])

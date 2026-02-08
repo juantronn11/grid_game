@@ -82,6 +82,7 @@ Open `http://localhost:5000` in your browser.
 - Join games by link or Game ID
 - Claim squares on the grid
 - View all joined games in "My Games"
+- Recover session if you lose access (name + last 4 digits of phone)
 - Download PDF of the completed grid
 - Request more squares if you hit the per-player limit
 - Send messages to the game host
@@ -97,6 +98,7 @@ Open `http://localhost:5000` in your browser.
 - Approve or deny player requests for extra squares
 - View player messages on the admin panel
 - Download grid as PDF
+- Recover host access via Game ID + admin password ("Host Login")
 - Discord webhook notifications (player joins, claims, messages, requests, grid full)
 
 ### For Super Admin
@@ -137,6 +139,8 @@ num_foot/
     join_game.html    -- Join game form
     game_grid.html    -- Player grid view
     host_gate.html    -- Host access code gate
+    recover.html      -- Player session recovery
+    admin_recover.html -- Host login recovery
     admin_create.html -- Create game form
     admin_login.html  -- Game admin login
     admin_dashboard.html -- Admin's games list
