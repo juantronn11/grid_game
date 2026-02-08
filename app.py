@@ -800,7 +800,11 @@ def join_game(game_id):
             return redirect(url_for("join_game", game_id=game_id))
 
         phone_digits = "".join(c for c in phone if c.isdigit())
-        last4 = phone_digits[-4:] if len(phone_digits) >= 4 else phone_digits
+        if len(phone_digits) != 10:
+            flash("Phone number must be exactly 10 digits.", "error")
+            return redirect(url_for("join_game", game_id=game_id))
+        phone = phone_digits  # store only digits
+        last4 = phone_digits[-4:]
 
         cur.execute(
             "SELECT phone, is_banned FROM players WHERE game_id = %s AND player_name = %s",
