@@ -117,6 +117,7 @@ Open `http://localhost:5000` in your browser.
 - **Host access code** -- only people with the code can create games
 - **Browse access code** -- only people with the code can browse available games
 - **CSRF protection** on all forms via Flask-WTF
+- **Brute-force lockout** -- 5 failed attempts triggers a 15-minute timeout on all login and gate routes, with Discord alert to super admin
 - **Rate limiting** on logins (5/min), game creation (5/min), joins (10/min), claims (20/min), messages (3/min)
 - **Secure cookies** with HttpOnly and SameSite flags
 - **HTTPS enforcement** via ProxyFix for reverse proxy deployments
