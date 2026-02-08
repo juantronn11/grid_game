@@ -926,3 +926,9 @@ td.claimed:hover .remove-btn {
     margin-left: 4px;
     vertical-align: middle;
 }
+
+.input-small {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.8rem;
+    height: auto;
+}

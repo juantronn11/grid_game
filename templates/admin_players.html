@@ -83,6 +83,14 @@
                         <button type="submit" class="btn btn-small btn-ban">Deny</button>
                     </form>
                     {% endif %}
+                    {% if not p["is_banned"] and game["max_claims"] > 0 %}
+                    <form method="post" action="{{ url_for('admin_grant_squares', game_id=game_id) }}" style="display:inline-flex;gap:0.2rem;align-items:center;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="player_name" value="{{ p['player_name'] }}">
+                        <input type="number" name="amount" min="1" max="100" value="{{ game['max_claims'] }}" style="width:3.5rem;" class="input input-small">
+                        <button type="submit" class="btn btn-small btn-primary">Grant</button>
+                    </form>
+                    {% endif %}
                     </div>
                 </td>
             </tr>

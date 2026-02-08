@@ -1378,6 +1378,55 @@ def admin_deny_request(game_id):
     return redirect(url_for("admin_players", game_id=game_id))
 
 
+@app.route("/admin/<game_id>/grant-squares", methods=["POST"])
+def admin_grant_squares(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    player_name = request.form.get("player_name", "").strip()
+    amount = request.form.get("amount", 0, type=int)
+    if not player_name or amount < 1:
+        flash("Invalid grant request.", "error")
+        return redirect(url_for("admin_players", game_id=game_id))
+
+    db = get_db()
+    cur = get_cursor()
+    cur.execute("SELECT name, discord_webhook FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
+    if not game:
+        abort(404)
+
+    cur.execute(
+        "SELECT id, is_banned FROM players WHERE game_id = %s AND player_name = %s",
+        (game_id, player_name),
+    )
+    player = cur.fetchone()
+    if not player or player["is_banned"]:
+        flash("Player not found or is banned.", "error")
+        return redirect(url_for("admin_players", game_id=game_id))
+
+    cur.execute(
+        "UPDATE players SET bonus_claims = bonus_claims + %s WHERE game_id = %s AND player_name = %s",
+        (amount, game_id, player_name),
+    )
+
+    # Auto-message the player
+    now = datetime.datetime.now().isoformat()
+    cur.execute(
+        "INSERT INTO messages (game_id, player_name, message, sent_at, sender_type) VALUES (%s, %s, %s, %s, 'host')",
+        (game_id, player_name, f"You've been granted {amount} extra square{'s' if amount != 1 else ''}! Go claim them.", now),
+    )
+    db.commit()
+
+    send_discord_notification(
+        game["discord_webhook"],
+        f"Host granted {amount} extra square{'s' if amount != 1 else ''} to '{player_name}' in '{game['name']}'",
+    )
+
+    flash(f"Granted {amount} extra square{'s' if amount != 1 else ''} to '{player_name}'.", "success")
+    return redirect(url_for("admin_players", game_id=game_id))
+
+
 @app.route("/admin/<game_id>/release", methods=["POST"])
 def admin_release(game_id):
     if not is_admin(game_id):
