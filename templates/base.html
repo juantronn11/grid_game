@@ -11,7 +11,11 @@
     <header>
         <a href="{{ url_for('index') }}" class="logo">Number Football Grid</a>
         <nav class="header-nav">
+            <a href="{{ url_for('browse_games') }}" class="header-link">Browse Games</a>
             <a href="{{ url_for('my_games') }}" class="header-link">My Games</a>
+            {% if session.get("is_superadmin") %}
+            <a href="{{ url_for('superadmin_dashboard') }}" class="header-link header-link-admin">Admin</a>
+            {% endif %}
         </nav>
     </header>
     <main>

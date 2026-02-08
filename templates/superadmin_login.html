@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Super Admin{% endblock %}
+{% block content %}
+<div class="card center-card">
+    <h2>Super Admin</h2>
+    <p>Enter the master password to access the admin panel.</p>
+    <form method="post">
+        <input type="password" name="password" placeholder="Master password" required class="input">
+        <button type="submit" class="btn btn-primary">Log In</button>
+    </form>
+</div>
+{% endblock %}

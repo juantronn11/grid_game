@@ -4,6 +4,7 @@ import random
 import secrets
 import sqlite3
 import datetime
+from dotenv import load_dotenv
 from flask import (
     Flask, render_template, request, redirect,
     url_for, flash, session, g, send_file, abort,
@@ -12,7 +13,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from game import NameGrid, export_grid_to_pdf
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
 DATABASE = os.path.join(SCRIPT_DIR, "game.db")
+SUPER_ADMIN_PASSWORD = os.environ.get("SUPER_ADMIN_PASSWORD", "admin1234")
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
@@ -161,6 +164,10 @@ def is_admin(game_id):
     return game_id in session.get("admin_games", [])
 
 
+def is_superadmin():
+    return session.get("is_superadmin", False)
+
+
 def is_game_locked(game):
     if game["is_locked"]:
         return True
@@ -196,6 +203,33 @@ def generate_and_store_numbers(game_id):
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/games")
+def browse_games():
+    db = get_db()
+    all_games = db.execute(
+        "SELECT * FROM games ORDER BY created_at DESC"
+    ).fetchall()
+
+    player_names = session.get("player_names", {})
+    games = []
+    for game in all_games:
+        locked = is_game_locked(game)
+        already_joined = game["id"] in player_names
+        games.append({
+            "id": game["id"],
+            "name": game["name"],
+            "team_x": game["team_x"],
+            "team_y": game["team_y"],
+            "claim_count": get_claim_count(game["id"]),
+            "square_price": game["square_price"],
+            "locked": locked,
+            "numbers_released": game["numbers_released"],
+            "already_joined": already_joined,
+        })
+
+    return render_template("browse_games.html", games=games)
 
 
 @app.route("/create", methods=["GET", "POST"])
@@ -699,6 +733,118 @@ def admin_remove(game_id):
     db.commit()
     flash(f"Removed claim at row {row}, col {col}.", "success")
     return redirect(url_for("admin_panel", game_id=game_id))
+
+
+# ── Routes: Super Admin ───────────────────────────────────────────
+
+@app.route("/superadmin", methods=["GET", "POST"])
+def superadmin_login():
+    if is_superadmin():
+        return redirect(url_for("superadmin_dashboard"))
+
+    if request.method == "POST":
+        password = request.form.get("password", "").strip()
+        if password == SUPER_ADMIN_PASSWORD:
+            session["is_superadmin"] = True
+            return redirect(url_for("superadmin_dashboard"))
+        else:
+            flash("Wrong password.", "error")
+
+    return render_template("superadmin_login.html")
+
+
+@app.route("/superadmin/dashboard")
+def superadmin_dashboard():
+    if not is_superadmin():
+        return redirect(url_for("superadmin_login"))
+
+    db = get_db()
+    all_games = db.execute(
+        "SELECT * FROM games ORDER BY created_at DESC"
+    ).fetchall()
+
+    games = []
+    for game in all_games:
+        games.append({
+            "id": game["id"],
+            "name": game["name"],
+            "team_x": game["team_x"],
+            "team_y": game["team_y"],
+            "created_at": game["created_at"],
+            "claim_count": get_claim_count(game["id"]),
+            "player_count": get_player_count(game["id"]),
+            "locked": is_game_locked(game),
+            "is_locked": game["is_locked"],
+            "numbers_released": game["numbers_released"],
+        })
+
+    return render_template("superadmin_dashboard.html", games=games)
+
+
+@app.route("/superadmin/shutdown/<game_id>", methods=["POST"])
+def superadmin_shutdown(game_id):
+    if not is_superadmin():
+        abort(403)
+
+    db = get_db()
+    game = db.execute("SELECT name FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        abort(404)
+
+    game_name = game["name"]
+    db.execute("DELETE FROM claims WHERE game_id = ?", (game_id,))
+    db.execute("DELETE FROM players WHERE game_id = ?", (game_id,))
+    db.execute("DELETE FROM games WHERE id = ?", (game_id,))
+    db.commit()
+
+    flash(f"Game '{game_name}' has been shut down and deleted.", "success")
+    return redirect(url_for("superadmin_dashboard"))
+
+
+@app.route("/superadmin/lock/<game_id>", methods=["POST"])
+def superadmin_lock(game_id):
+    if not is_superadmin():
+        abort(403)
+
+    db = get_db()
+    game = db.execute("SELECT is_locked FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        abort(404)
+
+    if game["is_locked"]:
+        db.execute(
+            "DELETE FROM claims WHERE game_id = ? AND player_name = 'VOID'",
+            (game_id,),
+        )
+        db.execute("UPDATE games SET is_locked = 0 WHERE id = ?", (game_id,))
+        count = get_claim_count(game_id)
+        if count < 100:
+            db.execute("UPDATE games SET is_complete = 0 WHERE id = ?", (game_id,))
+        db.commit()
+        flash("Game unlocked.", "success")
+    else:
+        now = datetime.datetime.now().isoformat()
+        for r in range(1, 11):
+            for c in range(1, 11):
+                try:
+                    db.execute(
+                        "INSERT INTO claims (game_id, row, col, player_name, claimed_at) VALUES (?, ?, ?, 'VOID', ?)",
+                        (game_id, r, c, now),
+                    )
+                except sqlite3.IntegrityError:
+                    pass
+        db.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = ?", (game_id,))
+        db.commit()
+        flash("Game locked.", "success")
+
+    return redirect(url_for("superadmin_dashboard"))
+
+
+@app.route("/superadmin/logout")
+def superadmin_logout():
+    session.pop("is_superadmin", None)
+    flash("Logged out of super admin.", "success")
+    return redirect(url_for("index"))
 
 
 if __name__ == "__main__":

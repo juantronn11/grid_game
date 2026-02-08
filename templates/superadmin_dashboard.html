@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Super Admin Dashboard{% endblock %}
+{% block content %}
+<div class="dash-header">
+    <h2>Super Admin Dashboard</h2>
+    <a href="{{ url_for('superadmin_logout') }}" class="btn btn-secondary">Log Out</a>
+</div>
+
+{% if not games %}
+<div class="card center-card">
+    <p>No games on the platform yet.</p>
+</div>
+{% else %}
+<div class="table-wrapper">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Game</th>
+                <th>Teams</th>
+                <th>ID</th>
+                <th>Spots</th>
+                <th>Players</th>
+                <th>Created</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for g in games %}
+            <tr>
+                <td><strong>{{ g.name }}</strong></td>
+                <td>{{ g.team_x }} vs {{ g.team_y }}</td>
+                <td><code>{{ g.id }}</code></td>
+                <td>{{ g.claim_count }}/100</td>
+                <td>{{ g.player_count }}</td>
+                <td>{{ g.created_at[:16].replace("T", " ") }}</td>
+                <td>
+                    {% if g.locked %}
+                        <span class="badge badge-red">Locked</span>
+                    {% endif %}
+                    {% if g.numbers_released %}
+                        <span class="badge badge-green">Released</span>
+                    {% else %}
+                        <span class="badge">Active</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div style="display:flex;gap:0.3rem;flex-wrap:wrap;">
+                        <a href="{{ url_for('admin_panel', game_id=g.id) }}" class="btn btn-small">View</a>
+
+                        <form method="post" action="{{ url_for('superadmin_lock', game_id=g.id) }}" style="display:inline;">
+                            <button type="submit" class="btn btn-small {% if g.locked %}btn-unban{% else %}btn-lock{% endif %}">
+                                {% if g.locked %}Unlock{% else %}Lock{% endif %}
+                            </button>
+                        </form>
+
+                        <form method="post" action="{{ url_for('superadmin_shutdown', game_id=g.id) }}" style="display:inline;"
+                              onsubmit="return confirm('Permanently delete game \'{{ g.name }}\'? This cannot be undone.')">
+                            <button type="submit" class="btn btn-small btn-danger">Shut Down</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

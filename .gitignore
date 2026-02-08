@@ -7,3 +7,4 @@ game.db
 grids/
 .env
 nul
+.aiignore
