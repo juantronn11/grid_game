@@ -41,6 +41,7 @@ SECRET_KEY=your_random_secret_key_here
 DATABASE_URL=postgresql://postgres.XXXXX:YOUR_PASSWORD@aws-0-region.pooler.supabase.com:6543/postgres
 SUPER_ADMIN_PASSWORD=your_secure_password_here
 HOST_ACCESS_CODE=your_host_code_here
+BROWSE_ACCESS_CODE=your_browse_code_here
 SUPERADMIN_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...  (optional)
 FLASK_DEBUG=1  (optional, local dev only)
 ```
@@ -51,6 +52,7 @@ FLASK_DEBUG=1  (optional, local dev only)
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `SUPER_ADMIN_PASSWORD` | Yes | Password for the `/superadmin` panel |
 | `HOST_ACCESS_CODE` | Yes | Code required to create new games (prevents spam) |
+| `BROWSE_ACCESS_CODE` | Yes | Code required to browse available games |
 | `SUPERADMIN_DISCORD_WEBHOOK` | No | Discord webhook for platform-wide notifications |
 | `FLASK_DEBUG` | No | Set to `1` for local development only |
 
@@ -113,6 +115,7 @@ Open `http://localhost:5000` in your browser.
 ## Security
 
 - **Host access code** -- only people with the code can create games
+- **Browse access code** -- only people with the code can browse available games
 - **CSRF protection** on all forms via Flask-WTF
 - **Rate limiting** on logins (5/min), game creation (5/min), joins (10/min), claims (20/min), messages (3/min)
 - **Secure cookies** with HttpOnly and SameSite flags
@@ -141,6 +144,7 @@ num_foot/
     join_game.html    -- Join game form
     game_grid.html    -- Player grid view + chat
     host_gate.html    -- Host access code gate
+    browse_gate.html  -- Browse access code gate
     recover.html      -- Player session recovery
     admin_recover.html -- Host login recovery
     admin_create.html -- Create game form
