@@ -161,7 +161,7 @@ def get_player_count(game_id):
 
 
 def is_admin(game_id):
-    return game_id in session.get("admin_games", [])
+    return game_id in session.get("admin_games", []) or is_superadmin()
 
 
 def is_superadmin():

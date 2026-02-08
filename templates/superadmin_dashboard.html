@@ -46,7 +46,7 @@
                 </td>
                 <td>
                     <div style="display:flex;gap:0.3rem;flex-wrap:wrap;">
-                        <a href="{{ url_for('admin_panel', game_id=g.id) }}" class="btn btn-small">View</a>
+                        <a href="{{ url_for('admin_panel', game_id=g.id) }}" class="btn btn-small btn-primary">Manage</a>
 
                         <form method="post" action="{{ url_for('superadmin_lock', game_id=g.id) }}" style="display:inline;">
                             <button type="submit" class="btn btn-small {% if g.locked %}btn-unban{% else %}btn-lock{% endif %}">
@@ -56,7 +56,7 @@
 
                         <form method="post" action="{{ url_for('superadmin_shutdown', game_id=g.id) }}" style="display:inline;"
                               onsubmit="return confirm('Permanently delete game \'{{ g.name }}\'? This cannot be undone.')">
-                            <button type="submit" class="btn btn-small btn-danger">Shut Down</button>
+                            <button type="submit" class="btn btn-small btn-danger">Delete</button>
                         </form>
                     </div>
                 </td>
