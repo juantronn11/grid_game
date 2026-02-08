@@ -1582,6 +1582,53 @@ def admin_reply(game_id):
     return redirect(url_for("admin_panel", game_id=game_id))
 
 
+@app.route("/admin/<game_id>/broadcast", methods=["POST"])
+@limiter.limit("5 per minute")
+def admin_broadcast(game_id):
+    if not is_admin(game_id):
+        abort(403)
+
+    message = request.form.get("message", "").strip()
+    if not message:
+        flash("Message cannot be empty.", "error")
+        return redirect(url_for("admin_panel", game_id=game_id))
+    if len(message) > 500:
+        flash("Message must be 500 characters or less.", "error")
+        return redirect(url_for("admin_panel", game_id=game_id))
+
+    db = get_db()
+    cur = get_cursor()
+    cur.execute("SELECT name, discord_webhook FROM games WHERE id = %s", (game_id,))
+    game = cur.fetchone()
+    if not game:
+        abort(404)
+
+    cur.execute(
+        "SELECT player_name FROM players WHERE game_id = %s AND is_banned = 0",
+        (game_id,),
+    )
+    players = cur.fetchall()
+    if not players:
+        flash("No active players to message.", "error")
+        return redirect(url_for("admin_panel", game_id=game_id))
+
+    now = datetime.datetime.now().isoformat()
+    for p in players:
+        cur.execute(
+            "INSERT INTO messages (game_id, player_name, message, sent_at, sender_type) VALUES (%s, %s, %s, %s, 'host')",
+            (game_id, p["player_name"], message, now),
+        )
+    db.commit()
+
+    send_discord_notification(
+        game["discord_webhook"],
+        f"Host broadcast to all players in '{game['name']}':\n> {message}",
+    )
+
+    flash(f"Message sent to {len(players)} player{'s' if len(players) != 1 else ''}.", "success")
+    return redirect(url_for("admin_panel", game_id=game_id))
+
+
 # ── Routes: Super Admin ───────────────────────────────────────────
 
 @app.route("/superadmin", methods=["GET", "POST"])

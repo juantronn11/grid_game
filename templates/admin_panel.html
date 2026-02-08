@@ -119,6 +119,15 @@
     </div>
 </div>
 
+<div class="card" style="margin-top:1.5rem;">
+    <h3>Message All Players</h3>
+    <form method="post" action="{{ url_for('admin_broadcast', game_id=game_id) }}" class="chat-reply-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="text" name="message" placeholder="Send a message to all players..." maxlength="500" required class="input chat-reply-input">
+        <button type="submit" class="btn btn-primary btn-small">Broadcast</button>
+    </form>
+</div>
+
 {% if chat_threads %}
 <div class="card" style="margin-top:1.5rem;">
     <h3>Player Chat ({{ chat_threads|length }} conversation{{ "s" if chat_threads|length > 1 else "" }})
