@@ -12,6 +12,7 @@ from flask import (
     Flask, render_template, request, redirect,
     url_for, flash, session, g, send_file, abort,
 )
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
@@ -25,9 +26,11 @@ SUPER_ADMIN_PASSWORD = os.environ.get("SUPER_ADMIN_PASSWORD", "admin1234")
 SUPERADMIN_DISCORD_WEBHOOK = os.environ.get("SUPERADMIN_DISCORD_WEBHOOK", "")
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(16))
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PREFERRED_URL_SCHEME"] = "https"
 csrf = CSRFProtect(app)
 limiter = Limiter(get_remote_address, app=app, default_limits=[])
 
