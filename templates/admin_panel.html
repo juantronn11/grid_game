@@ -52,14 +52,28 @@
 
 <div class="grid-wrapper">
     <table class="game-grid">
+        <colgroup>
+            <col class="col-team">
+            <col class="col-number">
+            {% for c in range(10) %}
+            <col class="col-data">
+            {% endfor %}
+        </colgroup>
         <tr>
-            <th class="corner-cell"></th>
+            <th class="corner-cell" colspan="2"></th>
+            <th colspan="10" class="team-label">{{ game["team_x"] }}</th>
+        </tr>
+        <tr>
+            <th class="corner-cell" colspan="2"></th>
             {% for c in range(10) %}
             <th class="number-cell">{% if has_numbers %}{{ col_numbers[c] }}{% else %}?{% endif %}</th>
             {% endfor %}
         </tr>
         {% for r in range(1, 11) %}
         <tr>
+            {% if r == 1 %}
+            <th class="team-label team-label-y" rowspan="10">{{ game["team_y"] }}</th>
+            {% endif %}
             <th class="number-cell">{% if has_numbers %}{{ row_numbers[r-1] }}{% else %}?{% endif %}</th>
             {% for c in range(1, 11) %}
             <td class="{% if grid[r][c] %}claimed{% else %}open{% endif %}">

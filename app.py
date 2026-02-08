@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS games (
     row_numbers TEXT NOT NULL DEFAULT '[]',
     col_numbers TEXT NOT NULL DEFAULT '[]',
     is_complete INTEGER NOT NULL DEFAULT 0,
-    numbers_released INTEGER NOT NULL DEFAULT 0
+    numbers_released INTEGER NOT NULL DEFAULT 0,
+    team_x      TEXT NOT NULL DEFAULT '',
+    team_y      TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS claims (
@@ -44,6 +46,7 @@ CREATE TABLE IF NOT EXISTS players (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     game_id     TEXT NOT NULL,
     player_name TEXT NOT NULL,
+    phone       TEXT NOT NULL DEFAULT '',
     joined_at   TEXT NOT NULL,
     is_banned   INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (game_id) REFERENCES games(id),
@@ -57,11 +60,15 @@ MIGRATIONS = [
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         game_id     TEXT NOT NULL,
         player_name TEXT NOT NULL,
+        phone       TEXT NOT NULL DEFAULT '',
         joined_at   TEXT NOT NULL,
         is_banned   INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (game_id) REFERENCES games(id),
         UNIQUE(game_id, player_name)
     )""",
+    "ALTER TABLE players ADD COLUMN phone TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE games ADD COLUMN team_x TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE games ADD COLUMN team_y TEXT NOT NULL DEFAULT ''",
 ]
 
 
@@ -177,9 +184,14 @@ def create_game():
     name = request.form.get("name", "").strip()
     password = request.form.get("password", "").strip()
     confirm = request.form.get("confirm", "").strip()
+    team_x = request.form.get("team_x", "").strip()
+    team_y = request.form.get("team_y", "").strip()
 
     if not name:
         flash("Game name is required.", "error")
+        return redirect(url_for("create_game"))
+    if not team_x or not team_y:
+        flash("Both team names are required.", "error")
         return redirect(url_for("create_game"))
     if len(password) < 4:
         flash("Password must be at least 4 characters.", "error")
@@ -193,9 +205,9 @@ def create_game():
 
     db = get_db()
     db.execute(
-        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers) "
-        "VALUES (?, ?, ?, ?, '[]', '[]')",
-        (game_id, name, generate_password_hash(password), now),
+        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y) "
+        "VALUES (?, ?, ?, ?, '[]', '[]', ?, ?)",
+        (game_id, name, generate_password_hash(password), now, team_x, team_y),
     )
     db.commit()
 
@@ -255,11 +267,15 @@ def join_game(game_id):
 
     if request.method == "POST":
         name = request.form.get("player_name", "").strip()
+        phone = request.form.get("phone", "").strip()
         if not name:
             flash("Please enter your name.", "error")
             return redirect(url_for("join_game", game_id=game_id))
         if len(name) > 20:
             flash("Name must be 20 characters or less.", "error")
+            return redirect(url_for("join_game", game_id=game_id))
+        if not phone:
+            flash("Please enter your phone number.", "error")
             return redirect(url_for("join_game", game_id=game_id))
 
         existing = db.execute(
@@ -273,8 +289,8 @@ def join_game(game_id):
         now = datetime.datetime.now().isoformat()
         try:
             db.execute(
-                "INSERT INTO players (game_id, player_name, joined_at) VALUES (?, ?, ?)",
-                (game_id, name, now),
+                "INSERT INTO players (game_id, player_name, phone, joined_at) VALUES (?, ?, ?, ?)",
+                (game_id, name, phone, now),
             )
             db.commit()
         except sqlite3.IntegrityError:

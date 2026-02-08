@@ -26,6 +26,7 @@
         <thead>
             <tr>
                 <th>Player</th>
+                <th>Phone</th>
                 <th>Claims</th>
                 <th>Joined</th>
                 <th>Status</th>
@@ -36,6 +37,7 @@
             {% for p in players %}
             <tr class="{% if p['is_banned'] %}row-banned{% endif %}">
                 <td><strong>{{ p["player_name"] }}</strong></td>
+                <td>{{ p["phone"] }}</td>
                 <td>{{ player_claims.get(p["player_name"], 0) }}</td>
                 <td>{{ p["joined_at"][:16].replace("T", " ") }}</td>
                 <td>
