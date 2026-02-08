@@ -12,6 +12,8 @@
         <input type="text" id="gameId" placeholder="Enter Game Code" maxlength="8" class="input" style="text-transform:uppercase">
         <button type="button" class="btn btn-secondary" onclick="joinGame()">Join Game</button>
     </form>
+
+    <p style="margin-top:1.5rem;font-size:0.85rem;color:#8b949e;">Returning player? <a href="{{ url_for('recover') }}" style="color:#58a6ff;">Recover your games</a></p>
 </div>
 
 <script>
