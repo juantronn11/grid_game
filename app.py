@@ -18,6 +18,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from cryptography.fernet import Fernet, InvalidToken
 from game import NameGrid, export_grid_to_pdf
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,9 +28,30 @@ SUPER_ADMIN_PASSWORD = os.environ.get("SUPER_ADMIN_PASSWORD", "admin1234")
 SUPERADMIN_DISCORD_WEBHOOK = os.environ.get("SUPERADMIN_DISCORD_WEBHOOK", "")
 HOST_ACCESS_CODE = os.environ.get("HOST_ACCESS_CODE", "")
 BROWSE_ACCESS_CODE = os.environ.get("BROWSE_ACCESS_CODE", "")
+ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "")
 
 import logging
 logging.basicConfig(level=logging.INFO)
+
+# ── Phone encryption helpers ─────────────────────────────────────
+_fernet = Fernet(ENCRYPTION_KEY.encode()) if ENCRYPTION_KEY else None
+
+
+def encrypt_phone(value):
+    """Encrypt a phone number. Returns ciphertext string, or plaintext if no key."""
+    if not _fernet or not value:
+        return value
+    return _fernet.encrypt(value.encode()).decode()
+
+
+def decrypt_phone(value):
+    """Decrypt a phone number. Returns plaintext, or value as-is if not encrypted."""
+    if not _fernet or not value:
+        return value
+    try:
+        return _fernet.decrypt(value.encode()).decode()
+    except (InvalidToken, Exception):
+        return value  # already plaintext (pre-encryption data)
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -77,6 +99,7 @@ CREATE TABLE IF NOT EXISTS players (
     game_id     TEXT NOT NULL,
     player_name TEXT NOT NULL,
     phone       TEXT NOT NULL DEFAULT '',
+    last4       TEXT NOT NULL DEFAULT '',
     joined_at   TEXT NOT NULL,
     is_banned   INTEGER NOT NULL DEFAULT 0,
     bonus_claims INTEGER NOT NULL DEFAULT 0,
@@ -152,6 +175,7 @@ MIGRATIONS = [
         player_sessions TEXT NOT NULL DEFAULT '{}'
     )""",
     "ALTER TABLE messages ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE players ADD COLUMN last4 TEXT NOT NULL DEFAULT ''",
 ]
 
 
@@ -186,6 +210,19 @@ def init_db():
             db.commit()
         except Exception:
             db.rollback()
+    # Backfill last4 + encrypt existing plaintext phones
+    if _fernet:
+        cur.execute("SELECT id, phone, last4 FROM players WHERE last4 = '' AND phone != ''")
+        rows = cur.fetchall()
+        for row in rows:
+            phone_val = row[1]
+            digits = "".join(c for c in phone_val if c.isdigit())
+            l4 = digits[-4:] if digits else ""
+            encrypted = encrypt_phone(phone_val)
+            cur.execute("UPDATE players SET phone = %s, last4 = %s WHERE id = %s", (encrypted, l4, row[0]))
+        if rows:
+            db.commit()
+            logging.info(f"Encrypted {len(rows)} existing phone numbers")
     cur.close()
     db.close()
 
@@ -738,16 +775,12 @@ def recover():
 
     cur = get_cursor()
     cur.execute(
-        "SELECT game_id, player_name, phone FROM players WHERE player_name = %s AND is_banned = 0",
-        (name,),
+        "SELECT game_id, player_name, last4 FROM players WHERE player_name = %s AND is_banned = 0 AND last4 = %s",
+        (name, last4),
     )
     rows = cur.fetchall()
 
-    matched = []
-    for row in rows:
-        stored_digits = "".join(c for c in row["phone"] if c.isdigit())[-4:]
-        if stored_digits == last4:
-            matched.append(row["game_id"])
+    matched = [row["game_id"] for row in rows]
 
     if not matched:
         is_locked, remaining = _record_fail("recover", "Player Recovery (/recover)")
@@ -887,7 +920,7 @@ def join_game(game_id):
         last4 = phone_digits[-4:]
 
         cur.execute(
-            "SELECT phone, is_banned FROM players WHERE game_id = %s AND player_name = %s",
+            "SELECT last4, is_banned FROM players WHERE game_id = %s AND player_name = %s",
             (game_id, name),
         )
         existing = cur.fetchone()
@@ -897,8 +930,8 @@ def join_game(game_id):
                 flash("You have been removed from this game.", "error")
                 return redirect(url_for("index"))
 
-            existing_digits = "".join(c for c in existing["phone"] if c.isdigit())[-4:]
-            if last4 and existing_digits and last4 == existing_digits:
+            existing_last4 = existing["last4"] or ""
+            if last4 and existing_last4 and last4 == existing_last4:
                 # Same person rejoining (last 4 digits match)
                 player_names = session.get("player_names", {})
                 player_names[game_id] = name
@@ -927,8 +960,8 @@ def join_game(game_id):
         now = datetime.datetime.now().isoformat()
         try:
             cur.execute(
-                "INSERT INTO players (game_id, player_name, phone, joined_at) VALUES (%s, %s, %s, %s)",
-                (game_id, name, phone, now),
+                "INSERT INTO players (game_id, player_name, phone, last4, joined_at) VALUES (%s, %s, %s, %s, %s)",
+                (game_id, name, encrypt_phone(phone), last4, now),
             )
             db.commit()
             send_discord_notification(game["discord_webhook"], f"Player '{name}' joined game '{game['name']}'")
@@ -1323,6 +1356,8 @@ def admin_players(game_id):
         (game_id,),
     )
     players = cur.fetchall()
+    for p in players:
+        p["phone"] = decrypt_phone(p["phone"])
 
     player_claims = {}
     cur.execute(

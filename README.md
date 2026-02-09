@@ -43,6 +43,7 @@ SUPER_ADMIN_PASSWORD=your_secure_password_here
 HOST_ACCESS_CODE=your_host_code_here
 BROWSE_ACCESS_CODE=your_browse_code_here
 SUPERADMIN_DISCORD_WEBHOOK=https://discord.com/api/webhooks/...  (optional)
+ENCRYPTION_KEY=your_fernet_key_here  (optional but recommended)
 FLASK_DEBUG=1  (optional, local dev only)
 ```
 
@@ -54,12 +55,19 @@ FLASK_DEBUG=1  (optional, local dev only)
 | `HOST_ACCESS_CODE` | Yes | Code required to create new games (prevents spam) |
 | `BROWSE_ACCESS_CODE` | Yes | Code required to browse available games |
 | `SUPERADMIN_DISCORD_WEBHOOK` | No | Discord webhook for platform-wide notifications |
+| `ENCRYPTION_KEY` | No | Fernet key for encrypting phone numbers (see below) |
 | `FLASK_DEBUG` | No | Set to `1` for local development only |
 
 Generate a secret key:
 
 ```
 python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Generate an encryption key:
+
+```
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 ### Run Locally
@@ -82,13 +90,14 @@ Open `http://localhost:5000` in your browser.
 
 ### For Players
 - Join games by link or 6-character Game Code
-- Claim squares on the grid
+- Claim squares on the grid with live progress (e.g. "You have 3/5 squares claimed")
 - View all joined games in "My Games"
-- **User accounts** -- super admin creates accounts; log in from any device and your games persist
+- **Create an account** or have super admin create one -- log in from any device and your games persist
 - Recover session if you lose access (name + last 4 digits of phone)
 - Download PDF of the completed grid
 - Request more squares if you hit the per-player limit
 - Two-way chat with the game host
+- Player names restricted to letters, numbers, and spaces only
 - Duplicate name protection via phone number
 
 ### For Game Hosts
@@ -100,6 +109,8 @@ Open `http://localhost:5000` in your browser.
 - Release numbers when ready
 - Ban/unban players and remove individual claims
 - Approve or deny player requests for extra squares
+- **Grant extra squares** directly to any player (auto-notifies them via chat)
+- **Broadcast a message** to all players in a game at once
 - Two-way chat with players (per-player threads on admin panel)
 - **Unread message badges** on admin dashboard and chat threads
 - "View as Player" button to preview the player experience
@@ -130,6 +141,8 @@ Open `http://localhost:5000` in your browser.
 - **SSRF protection** -- Discord webhook URLs validated against known prefixes
 - **Debug mode disabled** in production by default
 - **Reserved name blocking** ("VOID" cannot be used as a player name)
+- **Phone number encryption** -- player phone numbers encrypted at rest using Fernet (AES-128-CBC + HMAC); only last 4 digits stored in plaintext for recovery lookups
+- **Input validation** -- player names and usernames validated with strict regex patterns
 
 ## Project Structure
 
