@@ -1,6 +1,7 @@
 import os
 import random
 import datetime
+import tempfile
 from fpdf import FPDF
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -59,7 +60,7 @@ class NameGrid:
 
 def export_grid_to_pdf(grid, output_dir=None):
     if output_dir is None:
-        output_dir = GRIDS_DIR
+        output_dir = tempfile.gettempdir()
     os.makedirs(output_dir, exist_ok=True)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
