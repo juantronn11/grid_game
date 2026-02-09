@@ -428,8 +428,10 @@ def generate_and_store_numbers(game_id):
     if existing_row and existing_col:
         return existing_row, existing_col
 
-    row_numbers = [secrets.randbelow(10) for _ in range(10)]
-    col_numbers = [secrets.randbelow(10) for _ in range(10)]
+    row_numbers = list(range(10))
+    col_numbers = list(range(10))
+    secrets.SystemRandom().shuffle(row_numbers)
+    secrets.SystemRandom().shuffle(col_numbers)
     cur.execute(
         "UPDATE games SET row_numbers = %s, col_numbers = %s WHERE id = %s",
         (json.dumps(row_numbers), json.dumps(col_numbers), game_id),

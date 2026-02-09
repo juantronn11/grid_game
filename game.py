@@ -14,10 +14,14 @@ class NameGrid:
         self.numbers_generated = False
 
     def generate_numbers(self):
+        col_nums = list(range(10))
+        row_nums = list(range(10))
+        random.shuffle(col_nums)
+        random.shuffle(row_nums)
         for col in range(1, 11):
-            self.grid[0][col] = str(random.randint(0, 9))
+            self.grid[0][col] = str(col_nums[col - 1])
         for row in range(1, 11):
-            self.grid[row][0] = str(random.randint(0, 9))
+            self.grid[row][0] = str(row_nums[row - 1])
         self.numbers_generated = True
 
     def add_name(self, row, col, name):
