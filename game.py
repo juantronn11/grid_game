@@ -104,7 +104,9 @@ def export_grid_to_pdf(grid, output_dir=None):
                 pdf.set_fill_color(180, 180, 180)
 
             pdf.set_xy(x, y)
-            pdf.cell(cell_w, cell_h, text[:12], border=1, align="C", fill=fill)
+            # Strip non-latin1 chars (emojis etc.) — Helvetica only supports latin1
+            safe_text = text[:12].encode("latin-1", errors="ignore").decode("latin-1")
+            pdf.cell(cell_w, cell_h, safe_text, border=1, align="C", fill=fill)
 
     # Footer
     pdf.set_y(-15)

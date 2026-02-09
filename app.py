@@ -866,6 +866,9 @@ def join_game(game_id):
         if not name:
             flash("Please enter your name.", "error")
             return redirect(url_for("join_game", game_id=game_id))
+        if not re.match(r"^[A-Za-z0-9 ]+$", name):
+            flash("Name can only contain letters, numbers, and spaces.", "error")
+            return redirect(url_for("join_game", game_id=game_id))
         if name.upper() == "VOID":
             flash("That name is not allowed.", "error")
             return redirect(url_for("join_game", game_id=game_id))
