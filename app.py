@@ -9,9 +9,10 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.errors
 from dotenv import load_dotenv
+import time as _time
 from flask import (
     Flask, render_template, request, redirect,
-    url_for, flash, session, g, send_file, abort,
+    url_for, flash, session, g, send_file, abort, jsonify,
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -176,6 +177,7 @@ MIGRATIONS = [
     )""",
     "ALTER TABLE messages ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE players ADD COLUMN last4 TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE games ADD COLUMN espn_event_id TEXT NOT NULL DEFAULT ''",
 ]
 
 
@@ -252,6 +254,73 @@ def send_discord_notification(webhook_url, message):
         urllib.request.urlopen(req, timeout=3)
     except Exception:
         pass
+
+
+# ── ESPN live score helpers ───────────────────────────────────────
+
+_espn_cache = {}  # {league: (timestamp, data)}
+
+ESPN_LEAGUES = ("nfl", "college-football")
+
+
+def fetch_espn_scoreboard(league):
+    """Fetch current scoreboard from ESPN. Cached for 30 seconds."""
+    if league not in ESPN_LEAGUES:
+        return None
+    now = _time.time()
+    cached = _espn_cache.get(league)
+    if cached and now - cached[0] < 30:
+        return cached[1]
+    url = f"http://site.api.espn.com/apis/site/v2/sports/football/{league}/scoreboard"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "NumFootGrid/1.0"})
+        resp = urllib.request.urlopen(req, timeout=5)
+        data = json.loads(resp.read().decode())
+        _espn_cache[league] = (now, data)
+        return data
+    except Exception:
+        return cached[1] if cached else None
+
+
+def fetch_espn_event(event_id):
+    """Look up a single ESPN event by ID. Returns score dict or None."""
+    if not event_id:
+        return None
+    for league in ESPN_LEAGUES:
+        data = fetch_espn_scoreboard(league)
+        if not data:
+            continue
+        for event in data.get("events", []):
+            if str(event.get("id")) == str(event_id):
+                comp = event.get("competitions", [{}])[0]
+                competitors = comp.get("competitors", [])
+                home = away = None
+                for team in competitors:
+                    if team.get("homeAway") == "home":
+                        home = team
+                    else:
+                        away = team
+                if not home or not away:
+                    return None
+                status = comp.get("status", {})
+                status_type = status.get("type", {})
+                state = status_type.get("state", "")
+                if state == "in":
+                    period = status.get("period", 0)
+                    clock = status.get("displayClock", "")
+                    status_text = f"Q{period} {clock}"
+                elif state == "post":
+                    status_text = status_type.get("shortDetail", "Final")
+                else:
+                    status_text = status_type.get("shortDetail", "Scheduled")
+                return {
+                    "home_team": home["team"]["displayName"],
+                    "away_team": away["team"]["displayName"],
+                    "home_score": home.get("score", "0"),
+                    "away_score": away.get("score", "0"),
+                    "status_text": status_text,
+                }
+    return None
 
 
 # ── Grid helpers ──────────────────────────────────────────────────
@@ -438,6 +507,42 @@ def generate_and_store_numbers(game_id):
     )
     db.commit()
     return row_numbers, col_numbers
+
+
+# ── Routes: ESPN API ──────────────────────────────────────────────
+
+@app.route("/api/espn-games/<league>")
+@limiter.limit("10 per minute")
+@csrf.exempt
+def espn_games(league):
+    if league not in ESPN_LEAGUES:
+        return jsonify([]), 400
+    data = fetch_espn_scoreboard(league)
+    if not data:
+        return jsonify([])
+    games = []
+    for event in data.get("events", []):
+        comp = event.get("competitions", [{}])[0]
+        competitors = comp.get("competitors", [])
+        home = away = None
+        for team in competitors:
+            if team.get("homeAway") == "home":
+                home = team
+            else:
+                away = team
+        if not home or not away:
+            continue
+        status = comp.get("status", {}).get("type", {}).get("shortDetail", "Scheduled")
+        games.append({
+            "event_id": event.get("id", ""),
+            "name": event.get("name", ""),
+            "short_name": event.get("shortName", ""),
+            "home_team": home["team"]["displayName"],
+            "away_team": away["team"]["displayName"],
+            "date": event.get("date", ""),
+            "status": status,
+        })
+    return jsonify(games)
 
 
 # ── Routes: Public ────────────────────────────────────────────────
@@ -688,6 +793,10 @@ def create_game():
         flash("Discord webhook must be a valid Discord webhook URL.", "error")
         return redirect(url_for("create_game"))
 
+    espn_event_id = request.form.get("espn_event_id", "").strip()
+    if espn_event_id and not espn_event_id.isdigit():
+        espn_event_id = ""
+
     custom_code = request.form.get("custom_code", "").strip().upper()
     if custom_code:
         if len(custom_code) != 6 or not custom_code.isalnum():
@@ -706,9 +815,9 @@ def create_game():
         flash("That game code is already taken. Try a different one.", "error")
         return redirect(url_for("create_game"))
     cur.execute(
-        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods, square_price, payout_info, lock_at, max_claims, discord_webhook) "
-        "VALUES (%s, %s, %s, %s, '[]', '[]', %s, %s, %s, %s, %s, %s, %s, %s)",
-        (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods), square_price, payout_info, lock_at, max_claims, discord_webhook),
+        "INSERT INTO games (id, name, admin_password_hash, created_at, row_numbers, col_numbers, team_x, team_y, payment_methods, square_price, payout_info, lock_at, max_claims, discord_webhook, espn_event_id) "
+        "VALUES (%s, %s, %s, %s, '[]', '[]', %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (game_id, name, generate_password_hash(password), now, team_x, team_y, json.dumps(payment_methods), square_price, payout_info, lock_at, max_claims, discord_webhook, espn_event_id),
     )
     db.commit()
 
@@ -863,6 +972,8 @@ def game_view(game_id):
     )
     chat_messages = cur.fetchall()
 
+    live_score = fetch_espn_event(game.get("espn_event_id", ""))
+
     return render_template(
         "game_grid.html",
         game=game,
@@ -879,6 +990,7 @@ def game_view(game_id):
         my_claims=my_claims,
         allowed=allowed,
         chat_messages=chat_messages,
+        live_score=live_score,
     )
 
 
@@ -1324,6 +1436,8 @@ def admin_panel(game_id):
     )
     db.commit()
 
+    live_score = fetch_espn_event(game.get("espn_event_id", ""))
+
     return render_template(
         "admin_panel.html",
         game=game,
@@ -1339,6 +1453,7 @@ def admin_panel(game_id):
         pending_request_count=pending_request_count,
         chat_threads=chat_threads,
         unread_threads=unread_threads,
+        live_score=live_score,
     )
 
 

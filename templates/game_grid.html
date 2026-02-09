@@ -12,6 +12,20 @@
     </div>
 </div>
 
+{% if live_score %}
+<div class="scoreboard">
+    <div class="scoreboard-team">
+        <span class="scoreboard-name">{{ live_score.away_team }}</span>
+        <span class="scoreboard-score">{{ live_score.away_score }}</span>
+    </div>
+    <div class="scoreboard-status">{{ live_score.status_text }}</div>
+    <div class="scoreboard-team">
+        <span class="scoreboard-name">{{ live_score.home_team }}</span>
+        <span class="scoreboard-score">{{ live_score.home_score }}</span>
+    </div>
+</div>
+{% endif %}
+
 {% if locked and not game["numbers_released"] %}
 <div class="banner banner-locked">
     Game is locked. No more spots can be claimed.

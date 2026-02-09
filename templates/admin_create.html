@@ -5,6 +5,18 @@
     <h2>Create New Game</h2>
     <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label for="espn_league">Link to ESPN Game (optional)</label>
+        <select id="espn_league" class="input" onchange="loadEspnGames()">
+            <option value="">-- No live tracking --</option>
+            <option value="nfl">NFL</option>
+            <option value="college-football">College Football</option>
+        </select>
+        <select id="espn_game" class="input" style="display:none" onchange="fillTeams()">
+            <option value="">-- Select a game --</option>
+        </select>
+        <input type="hidden" name="espn_event_id" id="espn_event_id" value="">
+
         <label for="name">Game Name</label>
         <input type="text" name="name" id="name" placeholder="e.g. Super Bowl 2026" required class="input">
 
@@ -49,6 +61,51 @@
 </div>
 
 <script>
+var espnGames = [];
+
+function loadEspnGames() {
+    var league = document.getElementById('espn_league').value;
+    var sel = document.getElementById('espn_game');
+    var hidden = document.getElementById('espn_event_id');
+    if (!league) {
+        sel.style.display = 'none';
+        hidden.value = '';
+        espnGames = [];
+        return;
+    }
+    sel.innerHTML = '<option value="">Loading...</option>';
+    sel.style.display = '';
+    fetch('/api/espn-games/' + league)
+        .then(function(r) { return r.json(); })
+        .then(function(games) {
+            espnGames = games;
+            sel.innerHTML = '<option value="">-- Select a game --</option>';
+            games.forEach(function(g) {
+                var opt = document.createElement('option');
+                opt.value = g.event_id;
+                opt.textContent = g.away_team + ' at ' + g.home_team + ' — ' + g.status;
+                sel.appendChild(opt);
+            });
+        })
+        .catch(function() {
+            sel.innerHTML = '<option value="">Failed to load games</option>';
+        });
+}
+
+function fillTeams() {
+    var eventId = document.getElementById('espn_game').value;
+    document.getElementById('espn_event_id').value = eventId;
+    if (!eventId) return;
+    for (var i = 0; i < espnGames.length; i++) {
+        if (espnGames[i].event_id === eventId) {
+            document.getElementById('team_x').value = espnGames[i].home_team;
+            document.getElementById('team_y').value = espnGames[i].away_team;
+            document.getElementById('name').value = espnGames[i].name;
+            break;
+        }
+    }
+}
+
 let paymentCount = 0;
 function addPaymentRow() {
     const i = paymentCount++;
