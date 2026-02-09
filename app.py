@@ -28,6 +28,9 @@ SUPERADMIN_DISCORD_WEBHOOK = os.environ.get("SUPERADMIN_DISCORD_WEBHOOK", "")
 HOST_ACCESS_CODE = os.environ.get("HOST_ACCESS_CODE", "")
 BROWSE_ACCESS_CODE = os.environ.get("BROWSE_ACCESS_CODE", "")
 
+import logging
+logging.basicConfig(level=logging.INFO)
+
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(16))
