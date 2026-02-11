@@ -263,7 +263,15 @@ def send_discord_notification(webhook_url, message):
 
 _espn_cache = {}  # {league: (timestamp, data)}
 
-ESPN_LEAGUES = ("nfl", "college-football")
+ESPN_LEAGUES = {
+    "nfl": "football",
+    "college-football": "football",
+    "mlb": "baseball",
+    "college-baseball": "baseball",
+    "nba": "basketball",
+    "mens-college-basketball": "basketball",
+    "womens-college-basketball": "basketball",
+}
 
 
 def fetch_espn_scoreboard(league):
@@ -274,7 +282,8 @@ def fetch_espn_scoreboard(league):
     cached = _espn_cache.get(league)
     if cached and now - cached[0] < 30:
         return cached[1]
-    url = f"http://site.api.espn.com/apis/site/v2/sports/football/{league}/scoreboard"
+    sport = ESPN_LEAGUES[league]
+    url = f"http://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "NumFootGrid/1.0"})
         resp = urllib.request.urlopen(req, timeout=5)
