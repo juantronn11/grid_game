@@ -17,6 +17,7 @@
             <option value="mlb">MLB</option>
             <option value="college-baseball">College Baseball</option>
         </select>
+        <input type="date" id="espn_date" class="input" style="display:none" onchange="loadEspnGames()">
         <select id="espn_game" class="input" style="display:none" onchange="fillTeams()">
             <option value="">-- Select a game --</option>
         </select>
@@ -70,21 +71,31 @@ var espnGames = [];
 
 function loadEspnGames() {
     var league = document.getElementById('espn_league').value;
+    var datePicker = document.getElementById('espn_date');
     var sel = document.getElementById('espn_game');
     var hidden = document.getElementById('espn_event_id');
     if (!league) {
+        datePicker.style.display = 'none';
         sel.style.display = 'none';
         hidden.value = '';
         espnGames = [];
         return;
     }
+    datePicker.style.display = '';
+    var dateVal = datePicker.value;
+    var url = '/api/espn-games/' + league;
+    if (dateVal) url += '?date=' + dateVal;
     sel.innerHTML = '<option value="">Loading...</option>';
     sel.style.display = '';
-    fetch('/api/espn-games/' + league)
+    fetch(url)
         .then(function(r) { return r.json(); })
         .then(function(games) {
             espnGames = games;
             sel.innerHTML = '<option value="">-- Select a game --</option>';
+            if (games.length === 0) {
+                sel.innerHTML = '<option value="">No games found for this date</option>';
+                return;
+            }
             games.forEach(function(g) {
                 var opt = document.createElement('option');
                 opt.value = g.event_id;

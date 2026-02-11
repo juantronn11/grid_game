@@ -274,21 +274,24 @@ ESPN_LEAGUES = {
 }
 
 
-def fetch_espn_scoreboard(league):
+def fetch_espn_scoreboard(league, date=None):
     """Fetch current scoreboard from ESPN. Cached for 30 seconds."""
     if league not in ESPN_LEAGUES:
         return None
+    cache_key = f"{league}:{date or 'today'}"
     now = _time.time()
-    cached = _espn_cache.get(league)
+    cached = _espn_cache.get(cache_key)
     if cached and now - cached[0] < 30:
         return cached[1]
     sport = ESPN_LEAGUES[league]
     url = f"http://site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard"
+    if date:
+        url += f"?dates={date}"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "NumFootGrid/1.0"})
         resp = urllib.request.urlopen(req, timeout=5)
         data = json.loads(resp.read().decode())
-        _espn_cache[league] = (now, data)
+        _espn_cache[cache_key] = (now, data)
         return data
     except Exception:
         return cached[1] if cached else None
@@ -696,7 +699,10 @@ def generate_and_store_numbers(game_id):
 def espn_games(league):
     if league not in ESPN_LEAGUES:
         return jsonify([]), 400
-    data = fetch_espn_scoreboard(league)
+    date = request.args.get("date", "").replace("-", "")
+    if date and (len(date) != 8 or not date.isdigit()):
+        date = None
+    data = fetch_espn_scoreboard(league, date=date or None)
     if not data:
         return jsonify([])
     games = []
