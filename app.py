@@ -81,7 +81,9 @@ CREATE TABLE IF NOT EXISTS games (
     square_price TEXT NOT NULL DEFAULT '',
     payout_info TEXT NOT NULL DEFAULT '',
     max_claims  INTEGER NOT NULL DEFAULT 0,
-    discord_webhook TEXT NOT NULL DEFAULT ''
+    discord_webhook TEXT NOT NULL DEFAULT '',
+    espn_event_id TEXT NOT NULL DEFAULT '',
+    notified_quarters TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS claims (
@@ -178,6 +180,7 @@ MIGRATIONS = [
     "ALTER TABLE messages ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE players ADD COLUMN last4 TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE games ADD COLUMN espn_event_id TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE games ADD COLUMN notified_quarters TEXT NOT NULL DEFAULT '[]'",
 ]
 
 
@@ -313,14 +316,181 @@ def fetch_espn_event(event_id):
                     status_text = status_type.get("shortDetail", "Final")
                 else:
                     status_text = status_type.get("shortDetail", "Scheduled")
+                # Build per-quarter cumulative scores from linescores
+                home_ls = home.get("linescores", [])
+                away_ls = away.get("linescores", [])
+                quarter_scores = []
+                h_cum = 0
+                a_cum = 0
+                for qi in range(max(len(home_ls), len(away_ls))):
+                    h_cum += int(home_ls[qi].get("value", 0)) if qi < len(home_ls) else 0
+                    a_cum += int(away_ls[qi].get("value", 0)) if qi < len(away_ls) else 0
+                    quarter_scores.append({"quarter": qi + 1, "home": h_cum, "away": a_cum})
+
                 return {
                     "home_team": home["team"]["displayName"],
                     "away_team": away["team"]["displayName"],
                     "home_score": home.get("score", "0"),
                     "away_score": away.get("score", "0"),
                     "status_text": status_text,
+                    "period": status.get("period", 0),
+                    "state": state,
+                    "quarter_scores": quarter_scores,
                 }
     return None
+
+
+def check_quarter_winners(game_id, game, live_score):
+    """Check if any quarters completed and identify winners. Returns list of results."""
+    if not live_score or not game.get("espn_event_id"):
+        return []
+
+    col_numbers = json.loads(game["col_numbers"])
+    row_numbers = json.loads(game["row_numbers"])
+    if not col_numbers or not row_numbers:
+        return []
+
+    notified = json.loads(game.get("notified_quarters", "[]"))
+    period = live_score.get("period", 0)
+    state = live_score.get("state", "")
+    quarter_scores = live_score.get("quarter_scores", [])
+
+    # Determine which quarters are fully completed
+    completed = set()
+    for qs in quarter_scores:
+        q = qs["quarter"]
+        # Quarter is done if we're past it, or game is over
+        if period > q or state == "post":
+            completed.add(q)
+
+    new_quarters = sorted(completed - set(notified))
+    if not new_quarters:
+        return []
+
+    db = get_db()
+    cur = get_cursor()
+    results = []
+
+    for q in new_quarters:
+        # Find the score at end of this quarter
+        qs = next((s for s in quarter_scores if s["quarter"] == q), None)
+        if not qs:
+            continue
+
+        home_last = qs["home"] % 10
+        away_last = qs["away"] % 10
+
+        # Find which column matches home last digit (team_x = columns = home)
+        col_idx = None
+        for i, num in enumerate(col_numbers):
+            if int(num) == home_last:
+                col_idx = i + 1
+                break
+
+        # Find which row matches away last digit (team_y = rows = away)
+        row_idx = None
+        for i, num in enumerate(row_numbers):
+            if int(num) == away_last:
+                row_idx = i + 1
+                break
+
+        winner = None
+        if col_idx and row_idx:
+            cur.execute(
+                "SELECT player_name FROM claims WHERE game_id = %s AND \"row\" = %s AND col = %s",
+                (game_id, row_idx, col_idx),
+            )
+            claim = cur.fetchone()
+            if claim:
+                winner = claim["player_name"]
+
+        q_label = f"Q{q}" if q <= 4 else f"OT{q - 4}"
+        result = {
+            "quarter": q,
+            "label": q_label,
+            "home_score": qs["home"],
+            "away_score": qs["away"],
+            "home_last": home_last,
+            "away_last": away_last,
+            "winner": winner,
+        }
+        results.append(result)
+
+        # Send notifications
+        if winner:
+            msg = f"{q_label} Winner: {winner}! Score: {game['team_y']} {qs['away']} - {game['team_x']} {qs['home']} (digits: {away_last}-{home_last})"
+        else:
+            msg = f"{q_label}: No winner (square is empty/VOID). Score: {game['team_y']} {qs['away']} - {game['team_x']} {qs['home']} (digits: {away_last}-{home_last})"
+        send_discord_notification(game.get("discord_webhook", ""), msg)
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"[{game['name']}] {msg}")
+
+    # Update notified quarters
+    updated = sorted(set(notified) | set(new_quarters))
+    cur.execute(
+        "UPDATE games SET notified_quarters = %s WHERE id = %s",
+        (json.dumps(updated), game_id),
+    )
+    db.commit()
+
+    return results
+
+
+def get_all_quarter_results(game, live_score):
+    """Get results for all completed quarters (for display, no notifications)."""
+    if not live_score:
+        return []
+
+    col_numbers = json.loads(game["col_numbers"])
+    row_numbers = json.loads(game["row_numbers"])
+    if not col_numbers or not row_numbers:
+        return []
+
+    notified = json.loads(game.get("notified_quarters", "[]"))
+    quarter_scores = live_score.get("quarter_scores", [])
+    if not notified or not quarter_scores:
+        return []
+
+    cur = get_cursor()
+    results = []
+    for q in sorted(notified):
+        qs = next((s for s in quarter_scores if s["quarter"] == q), None)
+        if not qs:
+            continue
+
+        home_last = qs["home"] % 10
+        away_last = qs["away"] % 10
+
+        col_idx = None
+        for i, num in enumerate(col_numbers):
+            if int(num) == home_last:
+                col_idx = i + 1
+                break
+        row_idx = None
+        for i, num in enumerate(row_numbers):
+            if int(num) == away_last:
+                row_idx = i + 1
+                break
+
+        winner = None
+        if col_idx and row_idx:
+            cur.execute(
+                "SELECT player_name FROM claims WHERE game_id = %s AND \"row\" = %s AND col = %s",
+                (game["id"], row_idx, col_idx),
+            )
+            claim = cur.fetchone()
+            if claim:
+                winner = claim["player_name"]
+
+        q_label = f"Q{q}" if q <= 4 else f"OT{q - 4}"
+        results.append({
+            "quarter": q,
+            "label": q_label,
+            "home_score": qs["home"],
+            "away_score": qs["away"],
+            "winner": winner,
+        })
+
+    return results
 
 
 # ── Grid helpers ──────────────────────────────────────────────────
@@ -973,6 +1143,8 @@ def game_view(game_id):
     chat_messages = cur.fetchall()
 
     live_score = fetch_espn_event(game.get("espn_event_id", ""))
+    check_quarter_winners(game_id, game, live_score)
+    quarter_results = get_all_quarter_results(game, live_score)
 
     return render_template(
         "game_grid.html",
@@ -991,6 +1163,7 @@ def game_view(game_id):
         allowed=allowed,
         chat_messages=chat_messages,
         live_score=live_score,
+        quarter_results=quarter_results,
     )
 
 
@@ -1437,6 +1610,8 @@ def admin_panel(game_id):
     db.commit()
 
     live_score = fetch_espn_event(game.get("espn_event_id", ""))
+    check_quarter_winners(game_id, game, live_score)
+    quarter_results = get_all_quarter_results(game, live_score)
 
     return render_template(
         "admin_panel.html",
@@ -1454,6 +1629,7 @@ def admin_panel(game_id):
         chat_threads=chat_threads,
         unread_threads=unread_threads,
         live_score=live_score,
+        quarter_results=quarter_results,
     )
 
 

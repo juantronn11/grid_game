@@ -113,6 +113,23 @@
     </div>
 </div>
 
+{% if quarter_results %}
+<div class="card quarter-results" style="margin-top:1.5rem;">
+    <h3>Quarter Results</h3>
+    {% for qr in quarter_results %}
+    <div class="qr-row{% if qr.winner %} qr-hit{% endif %}">
+        <span class="qr-label">{{ qr.label }}</span>
+        <span class="qr-score">{{ game["team_y"] }} {{ qr.away_score }} - {{ game["team_x"] }} {{ qr.home_score }}</span>
+        {% if qr.winner %}
+        <span class="qr-winner">{{ qr.winner }}</span>
+        {% else %}
+        <span class="qr-no-winner">No winner</span>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
 <div class="card" style="margin-top:1.5rem;">
     <h3>Chat with Host</h3>
     {% if chat_messages %}

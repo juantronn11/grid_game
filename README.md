@@ -9,7 +9,7 @@ A web app for hosting football squares games. Create a 10x10 grid, invite player
 3. **Players join and claim squares** on the 10x10 grid
 4. **Host locks the grid** when ready (or it auto-locks at game time) -- unclaimed squares become VOID
 5. **Host releases the numbers** -- each row and column gets a random 0-9 digit
-6. **Winners are determined** by matching the last digit of each team's score to the grid
+6. **Winners are determined** by matching the last digit of each team's score to the grid (Team X = Home, Team Y = Away)
 
 ## Setup
 
@@ -97,6 +97,8 @@ Open `http://localhost:5000` in your browser.
 - Download PDF of the completed grid
 - Request more squares if you hit the per-player limit
 - Two-way chat with the game host
+- **Live Scoreboard** -- View real-time scores for linked NFL/NCAA games directly on the grid
+- **Quarterly Results** -- See who won each quarter as it happens
 - Player names restricted to letters, numbers, and spaces only
 - Duplicate name protection via phone number
 
@@ -104,6 +106,7 @@ Open `http://localhost:5000` in your browser.
 - Choose a custom 6-character Game Code or auto-generate one
 - Set team names, square price, payout info
 - Add payment methods (CashApp, Venmo, etc.)
+- **Live ESPN Tracking** -- Link your grid to a real NFL or College Football game for automatic scoring
 - Set max squares per player
 - Lock/unlock the grid manually or by auto-lock time
 - Release numbers when ready
@@ -112,6 +115,7 @@ Open `http://localhost:5000` in your browser.
 - **Grant extra squares** directly to any player (auto-notifies them via chat)
 - **Broadcast a message** to all players in a game at once
 - Two-way chat with players (per-player threads on admin panel)
+- **Automatic Winner Detection** -- System identifies the winner at the end of each quarter
 - **Unread message badges** on admin dashboard and chat threads
 - "View as Player" button to preview the player experience
 - Download grid as PDF

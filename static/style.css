@@ -1000,3 +1000,42 @@ td.claimed:hover .remove-btn {
     text-align: center;
     min-width: 60px;
 }
+
+/* ── Quarter Results ──────────────────────────── */
+.quarter-results h3 {
+    margin-bottom: 0.75rem;
+}
+.qr-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+    margin-bottom: 0.35rem;
+    font-size: 0.9rem;
+    background: rgba(139,148,158,0.06);
+}
+.qr-row.qr-hit {
+    background: rgba(35,134,54,0.15);
+    border: 1px solid rgba(35,134,54,0.3);
+}
+.qr-label {
+    font-weight: 700;
+    color: #8b949e;
+    min-width: 80px;
+}
+.qr-hit .qr-label {
+    color: #3fb950;
+}
+.qr-score {
+    color: #c9d1d9;
+    flex: 1;
+}
+.qr-winner {
+    font-weight: 700;
+    color: #3fb950;
+}
+.qr-no-winner {
+    color: #484f58;
+    font-size: 0.85rem;
+}
