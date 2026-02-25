@@ -5,7 +5,7 @@ A web app for hosting football squares games. Create a 10x10 grid, invite player
 ## How It Works
 
 1. **Host creates a game** -- sets team names, pricing, payment methods, and an optional auto-lock time
-2. **Host shares the link or Game Code** with players (custom 6-character code or auto-generated)
+2. **Host shares the link or Game Code** with players (custom 6-character code or auto-generated 8-character code)
 3. **Players join and claim squares** on the 10x10 grid
 4. **Host locks the grid** when ready (or it auto-locks at game time) -- unclaimed squares become VOID
 5. **Host releases the numbers** -- each row and column gets a random 0-9 digit
@@ -89,7 +89,7 @@ Open `http://localhost:5000` in your browser.
 ## Features
 
 ### For Players
-- Join games by link or 6-character Game Code
+- Join games by link or Game Code (custom 6-char or auto-generated 8-char)
 - Claim squares on the grid with live progress (e.g. "You have 3/5 squares claimed")
 - View all joined games in "My Games"
 - **Create an account** or have super admin create one -- log in from any device and your games persist
@@ -97,16 +97,18 @@ Open `http://localhost:5000` in your browser.
 - Download PDF of the completed grid
 - Request more squares if you hit the per-player limit
 - Two-way chat with the game host
-- **Live Scoreboard** -- View real-time scores for linked NFL/NCAA games directly on the grid
+- **Live Scoreboard** -- View real-time scores for linked games directly on the grid (NFL, College Football, NBA, Men's/Women's College Basketball, MLB, College Baseball)
+- **Nickname support** -- Use any name or nickname when joining; real name not required
 - **Quarterly Results** -- See who won each quarter as it happens
 - Player names restricted to letters, numbers, and spaces only
 - Duplicate name protection via phone number
 
 ### For Game Hosts
-- Choose a custom 6-character Game Code or auto-generate one
+- Choose a custom 6-character Game Code or auto-generate one (8 characters)
 - Set team names, square price, payout info
 - Add payment methods (CashApp, Venmo, etc.)
-- **Live ESPN Tracking** -- Link your grid to a real NFL or College Football game for automatic scoring
+- **Live ESPN Tracking** -- Link your grid to a real game for automatic scoring; supports NFL, College Football, NBA, Men's/Women's College Basketball, MLB, College Baseball
+- **Date picker** -- Browse scheduled games on any date (past or future) when setting up tracking
 - Set max squares per player
 - Lock/unlock the grid manually or by auto-lock time
 - Release numbers when ready
@@ -137,12 +139,16 @@ Open `http://localhost:5000` in your browser.
 - **CSRF protection** on all forms via Flask-WTF
 - **Brute-force lockout** -- 5 failed attempts triggers a 15-minute timeout on all login and gate routes, with Discord alert to super admin
 - **Rate limiting** on logins (5/min), game creation (5/min), joins (10/min), claims (20/min), messages (3/min)
-- **Secure cookies** with HttpOnly and SameSite flags
+- **Secure cookies** with HttpOnly, SameSite, and Secure flags (HTTPS-only transmission)
 - **HTTPS enforcement** via ProxyFix for reverse proxy deployments
 - **Cryptographically secure** number generation using Python's `secrets` module
+- **Strong auto-generated game codes** -- 8 hex characters (4.3 billion combinations)
+- **Admin password minimum 8 characters** -- enforced server-side on game creation
 - **User session cap** -- max 50 game sessions stored per user account to prevent data bloat
 - **Deleted user auto-revoke** -- if superadmin deletes an account, active sessions are invalidated on next action
-- **SSRF protection** -- Discord webhook URLs validated against known prefixes
+- **SSRF protection** -- Discord webhook URLs validated against known prefixes; no-redirect handler prevents redirected requests to unintended hosts
+- **No IP logging in Discord** -- brute-force and registration alerts omit client IPs to protect privacy if webhook URLs are ever exposed
+- **Superadmin Discord privacy** -- platform-wide notifications use game IDs only; no player names, game names, or PII sent to superadmin webhook
 - **Debug mode disabled** in production by default
 - **Reserved name blocking** ("VOID" cannot be used as a player name)
 - **Phone number encryption** -- player phone numbers encrypted at rest using Fernet (AES-128-CBC + HMAC); only last 4 digits stored in plaintext for recovery lookups
