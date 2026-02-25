@@ -59,6 +59,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(16))
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = True
 app.config["PREFERRED_URL_SCHEME"] = "https"
 csrf = CSRFProtect(app)
 limiter = Limiter(get_remote_address, app=app, default_limits=[])
@@ -239,6 +240,14 @@ DISCORD_WEBHOOK_PREFIXES = (
     "https://discordapp.com/api/webhooks/",
 )
 
+# Opener that never follows redirects, so a malicious webhook URL
+# cannot redirect our request to an internal or third-party host.
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *_):
+        return None
+
+_discord_opener = urllib.request.build_opener(_NoRedirectHandler())
+
 
 def send_discord_notification(webhook_url, message):
     if not webhook_url:
@@ -254,7 +263,7 @@ def send_discord_notification(webhook_url, message):
                 "User-Agent": "NumFootGrid/1.0",
             },
         )
-        urllib.request.urlopen(req, timeout=3)
+        _discord_opener.open(req, timeout=3)
     except Exception:
         pass
 
@@ -434,7 +443,7 @@ def check_quarter_winners(game_id, game, live_score):
         else:
             msg = f"{q_label}: No winner (square is empty/VOID). Score: {game['team_y']} {qs['away']} - {game['team_x']} {qs['home']} (digits: {away_last}-{home_last})"
         send_discord_notification(game.get("discord_webhook", ""), msg)
-        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"[{game['name']}] {msg}")
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"[{game_id}] {q_label}: Score {qs['away']}-{qs['home']} (digits {away_last}-{home_last}) — {'Winner found' if winner else 'No winner'}")
 
     # Update notified quarters
     updated = sorted(set(notified) | set(new_quarters))
@@ -592,7 +601,7 @@ def _record_fail(session_key, route_label):
         session[f"{session_key}_locked_until"] = until
         send_discord_notification(
             SUPERADMIN_DISCORD_WEBHOOK,
-            f"Brute-force lockout on {route_label} -- {LOCKOUT_ATTEMPTS} failed attempts from IP {request.remote_addr}",
+            f"Brute-force lockout on {route_label} -- {LOCKOUT_ATTEMPTS} failed attempts",
         )
         return True, 0
 
@@ -847,7 +856,7 @@ def user_register():
         flash("That username is already taken.", "error")
         return redirect(url_for("index"))
 
-    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"New account registered: '{username}' (self-signup from IP {request.remote_addr})")
+    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, "New account registered (self-signup)")
 
     session["user_id"] = new_user["id"]
     session["username"] = username
@@ -954,8 +963,8 @@ def create_game():
     if not team_x or not team_y:
         flash("Both team names are required.", "error")
         return redirect(url_for("create_game"))
-    if len(password) < 4:
-        flash("Password must be at least 4 characters.", "error")
+    if len(password) < 8:
+        flash("Password must be at least 8 characters.", "error")
         return redirect(url_for("create_game"))
     if password != confirm:
         flash("Passwords do not match.", "error")
@@ -989,7 +998,7 @@ def create_game():
             return redirect(url_for("create_game"))
         game_id = custom_code
     else:
-        game_id = secrets.token_hex(3).upper()  # 6 hex chars
+        game_id = secrets.token_hex(4).upper()  # 8 hex chars = 4.3B combinations
 
     now = datetime.datetime.now().isoformat()
 
@@ -1006,7 +1015,7 @@ def create_game():
     )
     db.commit()
 
-    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"New game '{name}' created (ID: {game_id})")
+    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"New game created: {game_id}")
 
     admin_games = session.get("admin_games", [])
     admin_games.append(game_id)
@@ -1359,7 +1368,7 @@ def claim_spot(game_id):
         cur.execute("UPDATE games SET is_complete = 1 WHERE id = %s", (game_id,))
         db.commit()
         send_discord_notification(game["discord_webhook"], f"Grid is FULL for '{game['name']}'! All 100 squares claimed.")
-        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Grid is FULL for '{game['name']}' (ID: {game_id})")
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Grid FULL: {game_id}")
 
     return redirect(url_for("game_view", game_id=game_id))
 
@@ -1722,7 +1731,7 @@ def admin_ban(game_id):
     db.commit()
 
     if game:
-        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Player '{player_name}' BANNED from '{game['name']}' (ID: {game_id})")
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Player banned: {game_id}")
 
     flash(f"Banned '{player_name}' and removed their claims.", "success")
     return redirect(url_for("admin_players", game_id=game_id))
@@ -1866,7 +1875,7 @@ def admin_release(game_id):
     db.commit()
 
     if game:
-        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Numbers RELEASED for '{game['name']}' (ID: {game_id})")
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Numbers released: {game_id}")
 
     flash("Numbers have been released to players!", "success")
     return redirect(url_for("admin_panel", game_id=game_id))
@@ -1897,7 +1906,7 @@ def admin_lock(game_id):
         if count < 100:
             cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
         db.commit()
-        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game['name']}' UNLOCKED (ID: {game_id})")
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game {game_id} UNLOCKED")
         send_discord_notification(game["discord_webhook"], f"Game '{game['name']}' has been UNLOCKED by the host")
         flash("Game unlocked. Players can join and claim spots again.", "success")
     else:
@@ -1912,7 +1921,7 @@ def admin_lock(game_id):
                 )
         cur.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = %s", (game_id,))
         db.commit()
-        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game['name']}' LOCKED (ID: {game_id})")
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game {game_id} LOCKED")
         send_discord_notification(game["discord_webhook"], f"Game '{game['name']}' has been LOCKED by the host")
         flash("Game locked. Unclaimed spots marked as VOID.", "success")
 
@@ -2137,7 +2146,7 @@ def superadmin_shutdown(game_id):
     cur.execute("DELETE FROM games WHERE id = %s", (game_id,))
     db.commit()
 
-    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game_name}' DELETED (ID: {game_id})")
+    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game {game_id} DELETED")
 
     flash(f"Game '{game_name}' has been shut down and deleted.", "success")
     return redirect(url_for("superadmin_dashboard"))
@@ -2167,7 +2176,7 @@ def superadmin_lock(game_id):
         if count < 100:
             cur.execute("UPDATE games SET is_complete = 0 WHERE id = %s", (game_id,))
         db.commit()
-        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game['name']}' UNLOCKED by Super Admin (ID: {game_id})")
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game {game_id} UNLOCKED by Super Admin")
         flash("Game unlocked.", "success")
     else:
         now = datetime.datetime.now().isoformat()
@@ -2180,7 +2189,7 @@ def superadmin_lock(game_id):
                 )
         cur.execute("UPDATE games SET is_locked = 1, is_complete = 1 WHERE id = %s", (game_id,))
         db.commit()
-        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game '{game['name']}' LOCKED by Super Admin (ID: {game_id})")
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"Game {game_id} LOCKED by Super Admin")
         flash("Game locked.", "success")
 
     return redirect(url_for("superadmin_dashboard"))
@@ -2212,7 +2221,7 @@ def superadmin_create_user():
             (username, generate_password_hash(password), now),
         )
         db.commit()
-        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"New user account created: '{username}'")
+        send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, "New user account created")
         flash(f"User '{username}' created.", "success")
     except psycopg2.errors.UniqueViolation:
         db.rollback()
@@ -2235,7 +2244,7 @@ def superadmin_delete_user(user_id):
 
     cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
     db.commit()
-    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, f"User account deleted: '{user['username']}'")
+    send_discord_notification(SUPERADMIN_DISCORD_WEBHOOK, "User account deleted")
     flash(f"User '{user['username']}' deleted.", "success")
     return redirect(url_for("superadmin_dashboard"))
 
